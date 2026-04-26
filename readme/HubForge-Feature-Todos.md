@@ -66,6 +66,19 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] Add email/exchange integration baseline (SMTP env slots)
 - [x] Add webhook delivery baseline (env slot and route-ready config)
 
+## Roadmap completion (current batch)
+
+- [x] Plugin/hook system for third-party HubForge modules
+- [x] Schema-per-tenant and DB-per-tenant tenancy templates
+- [x] NATS JetStream event sourcing scaffold
+- [x] OpenAPI spec generation from Hono routes
+- [x] Admin UI module generator (data tables, forms, detail views)
+- [x] Kubernetes manifest generation (`hubforge infra --target k8s`)
+- [x] Interactive `hubforge init` prompts (when no flags provided)
+- [x] `hubforge upgrade` to apply new HubForge template changes to existing projects
+- [x] Portal admin theme baseline aligned to reference style with built-in presets
+- [x] Third-party theme plugin mechanism via external theme CSS URL injection
+
 ## Platform services checklist (latest scan)
 
 - [x] ORM baseline (Prisma schema + migrations + bootstrap)

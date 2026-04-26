@@ -1,5 +1,5 @@
 export type DbProvider = 'sqlite' | 'postgres' | 'mysql' | 'sqlserver';
-export type TenantMode = 'shared' | 'isolated';
+export type TenantMode = 'shared' | 'isolated' | 'schema-per-tenant' | 'db-per-tenant';
 export type AiMode = 'fastapi' | 'none';
 export type AuthMode = 'external' | 'local';
 export type AuthProvider = 'zitadel' | 'auth0' | 'keycloak' | 'custom';

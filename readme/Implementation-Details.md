@@ -98,13 +98,13 @@ This is intentionally an in-process worker for simplicity. In production, the wo
 - [x] Playwright e2e wiring (config + smoke spec + CI workflow)
 - [x] Comprehensive root README for open-source contributors
 
-## Next expansion targets
+## Roadmap completion status
 
-- Plugin/hook system for third-party HubForge modules
-- Schema-per-tenant and DB-per-tenant tenancy templates
-- NATS JetStream event sourcing scaffold
-- OpenAPI spec generation from Hono routes
-- Admin UI module generator (data tables, forms, detail views)
-- Kubernetes manifest generation
-- Interactive `hubforge init` prompts
-- `hubforge upgrade` to diff and apply template changes to existing projects
+- [x] Plugin/hook system for third-party HubForge modules
+- [x] Schema-per-tenant and DB-per-tenant tenancy templates
+- [x] NATS JetStream event sourcing scaffold
+- [x] OpenAPI spec generation from Hono routes
+- [x] Admin UI module generator (data tables, forms, detail views)
+- [x] Kubernetes manifest generation
+- [x] Interactive `hubforge init` prompts
+- [x] `hubforge upgrade` to apply template changes to existing projects

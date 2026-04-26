@@ -1,5 +1,7 @@
 import { access, mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { createInterface } from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 import { z } from 'zod';
 import { getFlagValue, hasFlag, getPositionalArgs } from '../lib/args.js';
 import { isDirectoryEmpty, writeTextFile } from '../lib/fs.js';
@@ -7,9 +9,10 @@ import { getExecutionCwd } from '../lib/runtime.js';
 import { scaffoldFullTemplatePack } from '../template-packs/full-pack.js';
 import { scaffoldFullPostgresRlsTemplatePack } from '../template-packs/full-postgres-rls-pack.js';
 import type { InitScaffoldOptions } from '../template-packs/types.js';
+import { loadHooks } from '../lib/plugins.js';
 
 const dbProviderSchema = z.enum(['sqlite', 'postgres', 'mysql', 'sqlserver']);
-const tenantModeSchema = z.enum(['shared', 'isolated']);
+const tenantModeSchema = z.enum(['shared', 'isolated', 'schema-per-tenant', 'db-per-tenant']);
 const aiModeSchema = z.enum(['fastapi', 'none']);
 const authModeSchema = z.enum(['external', 'local']);
 const authProviderSchema = z.enum(['zitadel', 'auth0', 'keycloak', 'custom']);
@@ -17,7 +20,14 @@ const templatePackSchema = z.enum(['full', 'full-postgres-rls', 'full-cloud', 'f
 
 export async function runInitCommand(args: string[]): Promise<void> {
   const positional = getPositionalArgs(args);
-  const projectName = positional[0];
+  let projectName = positional[0];
+
+  const interactive = args.length === 0 || (!projectName && !hasAnyKnownFlag(args));
+  if (interactive) {
+    const prompted = await promptForInitOptions();
+    projectName = prompted.projectName;
+    args = prompted.args;
+  }
 
   if (!projectName) {
     throw new Error('Missing required project name. Usage: hubforge init <project-name> [options]');
@@ -53,7 +63,34 @@ export async function runInitCommand(args: string[]): Promise<void> {
     force,
   };
 
+  const cwd = getExecutionCwd();
+  const hooks = await loadHooks(cwd);
+  await hooks.beforeInit?.({
+    cwd,
+    command: 'init',
+    args,
+    projectName,
+    options: {
+      dbProvider,
+      tenantMode,
+      aiMode,
+      authMode,
+      authProvider,
+      authServer,
+      templatePack,
+      force,
+    },
+  });
+
   await scaffoldProject(options);
+
+  await hooks.afterInit?.({
+    cwd,
+    command: 'init',
+    args,
+    projectName,
+    targetDir: path.resolve(cwd, projectName),
+  });
 
   console.log(`[hubforge] Project scaffold created at ./${projectName}`);
   console.log(`[hubforge] Template pack: ${templatePack}`);
@@ -70,6 +107,42 @@ export async function runInitCommand(args: string[]): Promise<void> {
   console.log('  pnpm dev:api');
   console.log('  pnpm dev:ui');
   console.log('  pnpm dev:portal');
+}
+
+function hasAnyKnownFlag(args: string[]): boolean {
+  const known = ['--template', '--db', '--tenant', '--ai', '--auth', '--auth-provider', '--authserver', '--force'];
+  return known.some((flag) => args.includes(flag));
+}
+
+async function promptForInitOptions(): Promise<{ projectName: string; args: string[] }> {
+  const rl = createInterface({ input, output });
+  try {
+    const projectName = (await rl.question('Project name: ')).trim();
+    if (!projectName) {
+      throw new Error('Project name is required.');
+    }
+
+    const template = normalizePromptChoice(await rl.question('Template [full/full-postgres-rls/full-cloud/full-local] (full): '), 'full');
+    const db = normalizePromptChoice(await rl.question('Database [sqlite/postgres/mysql/sqlserver] (sqlite): '), 'sqlite');
+    const tenant = normalizePromptChoice(await rl.question('Tenant mode [shared/isolated/schema-per-tenant/db-per-tenant] (shared): '), 'shared');
+    const ai = normalizePromptChoice(await rl.question('AI mode [fastapi/none] (fastapi): '), 'fastapi');
+    const auth = normalizePromptChoice(await rl.question('Auth mode [local/external] (local): '), 'local');
+    const authProvider = normalizePromptChoice(await rl.question('Auth provider [zitadel/auth0/keycloak/custom] (zitadel): '), 'zitadel');
+    const authServerAnswer = normalizePromptChoice(await rl.question('Enable auth-server settings scaffold? [y/N]: '), 'n');
+
+    const args: string[] = [projectName, '--template', template, '--db', db, '--tenant', tenant, '--ai', ai, '--auth', auth, '--auth-provider', authProvider];
+    if (authServerAnswer === 'y' || authServerAnswer === 'yes') {
+      args.push('--authserver');
+    }
+    return { projectName, args };
+  } finally {
+    rl.close();
+  }
+}
+
+function normalizePromptChoice(inputValue: string, fallback: string): string {
+  const value = inputValue.trim().toLowerCase();
+  return value.length > 0 ? value : fallback;
 }
 
 async function scaffoldProject(options: InitScaffoldOptions): Promise<void> {

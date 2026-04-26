@@ -20,13 +20,38 @@ type Pages = {
   "/settings/auth-server": {
     params: {};
   };
+  "/settings/theme": {
+    params: {};
+  };
   "/dashboard": {
     params: {};
   };
   "/settings": {
     params: {};
   };
+  "/assets2": {
+    params: {};
+  };
+  "/assets": {
+    params: {};
+  };
+  "/assets2/:id": {
+    params: {
+      "id": string;
+    };
+  };
+  "/assets2/new": {
+    params: {};
+  };
   "/docs": {
+    params: {};
+  };
+  "/assets/:id": {
+    params: {
+      "id": string;
+    };
+  };
+  "/assets/new": {
     params: {};
   };
 };
@@ -34,7 +59,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/login" | "/settings/auth-server" | "/dashboard" | "/settings" | "/docs";
+    page: "/" | "/login" | "/settings/auth-server" | "/settings/theme" | "/dashboard" | "/settings" | "/assets2" | "/assets" | "/assets2/:id" | "/assets2/new" | "/docs" | "/assets/:id" | "/assets/new";
   };
   "routes/_index.tsx": {
     id: "routes/_index";
@@ -46,11 +71,15 @@ type RouteFiles = {
   };
   "routes/_app.tsx": {
     id: "routes/_app";
-    page: "/settings/auth-server" | "/dashboard" | "/settings" | "/docs";
+    page: "/settings/auth-server" | "/settings/theme" | "/dashboard" | "/settings" | "/assets2" | "/assets" | "/assets2/:id" | "/assets2/new" | "/docs" | "/assets/:id" | "/assets/new";
   };
   "routes/_app.settings.auth-server._index.tsx": {
     id: "routes/_app.settings.auth-server._index";
     page: "/settings/auth-server";
+  };
+  "routes/_app.settings.theme._index.tsx": {
+    id: "routes/_app.settings.theme._index";
+    page: "/settings/theme";
   };
   "routes/_app.dashboard._index.tsx": {
     id: "routes/_app.dashboard._index";
@@ -60,9 +89,33 @@ type RouteFiles = {
     id: "routes/_app.settings._index";
     page: "/settings";
   };
+  "routes/_app.assets2._index.tsx": {
+    id: "routes/_app.assets2._index";
+    page: "/assets2";
+  };
+  "routes/_app.assets._index.tsx": {
+    id: "routes/_app.assets._index";
+    page: "/assets";
+  };
+  "routes/_app.assets2.$id.tsx": {
+    id: "routes/_app.assets2.$id";
+    page: "/assets2/:id";
+  };
+  "routes/_app.assets2.new.tsx": {
+    id: "routes/_app.assets2.new";
+    page: "/assets2/new";
+  };
   "routes/_app.docs._index.tsx": {
     id: "routes/_app.docs._index";
     page: "/docs";
+  };
+  "routes/_app.assets.$id.tsx": {
+    id: "routes/_app.assets.$id";
+    page: "/assets/:id";
+  };
+  "routes/_app.assets.new.tsx": {
+    id: "routes/_app.assets.new";
+    page: "/assets/new";
   };
 };
 
@@ -72,7 +125,14 @@ type RouteModules = {
   "routes/login": typeof import("./app/routes/login.tsx");
   "routes/_app": typeof import("./app/routes/_app.tsx");
   "routes/_app.settings.auth-server._index": typeof import("./app/routes/_app.settings.auth-server._index.tsx");
+  "routes/_app.settings.theme._index": typeof import("./app/routes/_app.settings.theme._index.tsx");
   "routes/_app.dashboard._index": typeof import("./app/routes/_app.dashboard._index.tsx");
   "routes/_app.settings._index": typeof import("./app/routes/_app.settings._index.tsx");
+  "routes/_app.assets2._index": typeof import("./app/routes/_app.assets2._index.tsx");
+  "routes/_app.assets._index": typeof import("./app/routes/_app.assets._index.tsx");
+  "routes/_app.assets2.$id": typeof import("./app/routes/_app.assets2.$id.tsx");
+  "routes/_app.assets2.new": typeof import("./app/routes/_app.assets2.new.tsx");
   "routes/_app.docs._index": typeof import("./app/routes/_app.docs._index.tsx");
+  "routes/_app.assets.$id": typeof import("./app/routes/_app.assets.$id.tsx");
+  "routes/_app.assets.new": typeof import("./app/routes/_app.assets.new.tsx");
 };

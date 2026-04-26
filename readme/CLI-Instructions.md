@@ -23,6 +23,8 @@ Run from repository root:
   - `pnpm hubforge feature add crm --type tenant-module --target my-saas`
   - `pnpm hubforge feature add auth --type auth-flow --target my-saas`
   - `pnpm hubforge feature add notifications --type notifications-module --target my-saas`
+  - `pnpm hubforge infra --target k8s`
+  - `pnpm hubforge upgrade --target ../fieldops-workhub-local`
 
 ## Commands
 
@@ -45,6 +47,8 @@ Options:
 - `--tenant <mode>` where mode is one of:
   - `shared` (default)
   - `isolated`
+  - `schema-per-tenant`
+  - `db-per-tenant`
 - `--ai <mode>` where mode is one of:
   - `fastapi` (default)
   - `none`
@@ -59,6 +63,8 @@ Options:
   - `custom`
 - `--authserver` to scaffold tenant-auth-server settings persistence and portal settings UI
 - `--force` to scaffold into a non-empty target directory
+
+When no flags are provided, `hubforge init` now enters an interactive prompt flow.
 
 Generated output includes:
 
@@ -79,6 +85,9 @@ Generated output includes:
 - API docs baseline (`/openapi.json` OpenAPI 3.1 + interactive `/docs` Scalar API Reference)
 - API CORS baseline for browser clients (including preflight support)
 - auth route compatibility aliases (`/auth/*` and `/v1/auth/*`)
+- plugin hooks baseline (`hubforge.plugins.mjs`) and plugin SDK package (`@hubforge/plugin-sdk`)
+- JetStream-ready events package baseline (`packages/events`)
+- Kubernetes manifest baseline (`infra/k8s`)
 
 Additional `full-postgres-rls` output includes:
 
@@ -97,6 +106,7 @@ Options:
 - `--type <kind>` where kind is one of:
   - `api` (default)
   - `api-resource`
+  - `admin-resource`
   - `ui`
   - `public-page`
   - `tenant-module`
@@ -111,6 +121,7 @@ Generated output by type:
 
 - `api`: route skeleton + event schema skeleton
 - `api-resource`: REST resource route + event schema + API server route registration patch
+- `admin-resource`: API CRUD route + portal list/create/detail pages + event schema stub + server patch
 - `ui`: authenticated portal route in `apps/portal/app/routes`
 - `public-page`: public React Router route in `apps/ui/app/routes`
 - `tenant-module`: module package in `packages/modules/<slug>` + registry patches in workflows and portal module listing
@@ -119,6 +130,26 @@ Generated output by type:
 - `billing-module`: billing route + billing events + portal billing page + server patch
 - `notifications-module`: notifications package + API route + worker scaffold + server patch
 - `ai-agent`: AI agent Python scaffold + API invoke route + server patch
+
+### 3. Infra command
+
+`hubforge infra --target k8s`
+
+Generates Kubernetes baseline manifests under `infra/k8s`:
+
+- namespace
+- api deployment
+- portal deployment
+- ui deployment
+
+### 4. Upgrade command
+
+`hubforge upgrade [--target <path>] [--force]`
+
+- Reads `hubforge.json` in target project
+- Re-scaffolds current template into a temporary directory
+- Applies missing files (or all template files with `--force`)
+- Supports plugin hooks (`beforeUpgrade`, `afterUpgrade`)
 
 ## Documentation discipline
 

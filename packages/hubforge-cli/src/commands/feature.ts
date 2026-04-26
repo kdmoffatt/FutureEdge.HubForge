@@ -3,10 +3,12 @@ import path from 'node:path';
 import { getFlagValue, getPositionalArgs } from '../lib/args.js';
 import { writeTextFile } from '../lib/fs.js';
 import { getExecutionCwd } from '../lib/runtime.js';
+import { loadHooks } from '../lib/plugins.js';
 
 type FeatureType =
   | 'api'
   | 'api-resource'
+  | 'admin-resource'
   | 'ui'
   | 'public-page'
   | 'tenant-module'
@@ -32,7 +34,11 @@ export async function runFeatureCommand(args: string[]): Promise<void> {
   const type = parseType(getFlagValue(rest, '--type') ?? 'api');
   const target = path.resolve(getExecutionCwd(), getFlagValue(rest, '--target') ?? '.');
 
+  const hooks = await loadHooks(target);
+  await hooks.beforeFeature?.({ cwd: target, command: 'feature', args, featureName, type, targetDir: target });
+
   await createFeature(featureName, type, target);
+  await hooks.afterFeature?.({ cwd: target, command: 'feature', args, featureName, type, targetDir: target });
   console.log(`[hubforge] Feature '${featureName}' (${type}) added in ${target}`);
 }
 
@@ -79,6 +85,31 @@ export const ${toCamelCase(featureName)}CreatedEvent = z.object({
       apiResourceEventTs(slug, featureName),
     );
     await patchApiServerTs(targetDir, slug, pascal);
+    return;
+  }
+
+  if (type === 'admin-resource') {
+    await writeTextFile(
+      path.join(targetDir, 'apps', 'api', 'src', 'routes', `${slug}.ts`),
+      adminResourceRouteTs(slug, pascal),
+    );
+    await patchApiServerTs(targetDir, slug, pascal);
+    await writeTextFile(
+      path.join(targetDir, 'apps', 'portal', 'app', 'routes', `_app.${slug}._index.tsx`),
+      adminResourceListPageTsx(pascal, title, slug),
+    );
+    await writeTextFile(
+      path.join(targetDir, 'apps', 'portal', 'app', 'routes', `_app.${slug}.new.tsx`),
+      adminResourceCreatePageTsx(pascal, title, slug),
+    );
+    await writeTextFile(
+      path.join(targetDir, 'apps', 'portal', 'app', 'routes', `_app.${slug}.$id.tsx`),
+      adminResourceDetailPageTsx(pascal, title, slug),
+    );
+    await writeTextFile(
+      path.join(targetDir, 'packages', 'events', 'src', `${slug}.ts`),
+      apiResourceEventTs(slug, featureName),
+    );
     return;
   }
 
@@ -215,6 +246,7 @@ function parseType(value: string): FeatureType {
   if (
     value === 'api'
     || value === 'api-resource'
+      || value === 'admin-resource'
     || value === 'ui'
     || value === 'public-page'
     || value === 'tenant-module'
@@ -227,7 +259,200 @@ function parseType(value: string): FeatureType {
     return value;
   }
 
-  throw new Error(`Invalid feature type '${value}'. Use api, api-resource, ui, public-page, tenant-module, worker, auth-flow, billing-module, notifications-module, or ai-agent.`);
+  throw new Error(`Invalid feature type '${value}'. Use api, api-resource, admin-resource, ui, public-page, tenant-module, worker, auth-flow, billing-module, notifications-module, or ai-agent.`);
+}
+
+function adminResourceRouteTs(slug: string, pascal: string): string {
+  return `import type { Hono } from 'hono';
+
+type ${pascal}Item = {
+  id: string;
+  name: string;
+  status: 'active' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
+};
+
+const store = new Map<string, ${pascal}Item>();
+
+export function register${pascal}Routes(app: Hono): void {
+  app.get('/v1/${slug}', (c) => {
+    const items = Array.from(store.values());
+    return c.json({ items, total: items.length, page: 1, limit: items.length || 20 });
+  });
+
+  app.get('/v1/${slug}/:id', (c) => {
+    const item = store.get(c.req.param('id'));
+    if (!item) {
+      return c.json({ error: '${pascal} not found' }, 404);
+    }
+    return c.json(item);
+  });
+
+  app.post('/v1/${slug}', async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { name?: unknown; status?: unknown };
+    const now = new Date().toISOString();
+    const item: ${pascal}Item = {
+      id: crypto.randomUUID(),
+      name: typeof body.name === 'string' && body.name.trim() ? body.name.trim() : '${pascal}',
+      status: body.status === 'inactive' ? 'inactive' : 'active',
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.set(item.id, item);
+    return c.json(item, 201);
+  });
+
+  app.put('/v1/${slug}/:id', async (c) => {
+    const id = c.req.param('id');
+    const existing = store.get(id);
+    if (!existing) {
+      return c.json({ error: '${pascal} not found' }, 404);
+    }
+    const body = (await c.req.json().catch(() => ({}))) as { name?: unknown; status?: unknown };
+    const updated: ${pascal}Item = {
+      ...existing,
+      name: typeof body.name === 'string' && body.name.trim() ? body.name.trim() : existing.name,
+      status: body.status === 'inactive' ? 'inactive' : body.status === 'active' ? 'active' : existing.status,
+      updatedAt: new Date().toISOString(),
+    };
+    store.set(id, updated);
+    return c.json(updated);
+  });
+
+  app.delete('/v1/${slug}/:id', (c) => {
+    store.delete(c.req.param('id'));
+    return c.body(null, 204);
+  });
+}
+`;
+}
+
+function adminResourceListPageTsx(pascal: string, title: string, slug: string): string {
+  return `import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type ${pascal}Item = { id: string; name: string; status: string; createdAt: string };
+
+export default function ${pascal}ListPage() {
+  const [items, setItems] = useState<${pascal}Item[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+    fetch(API + '/v1/${slug}', { headers: { 'x-tenant-id': tenantId, authorization: 'Bearer ' + token } })
+      .then((res) => (res.ok ? res.json() : { items: [] }))
+      .then((data: { items?: ${pascal}Item[] }) => setItems(data.items ?? []))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>${title}</h2>
+        <Link to="/${slug}/new" style={{ background: '#2563eb', color: '#fff', borderRadius: 8, textDecoration: 'none', padding: '8px 12px' }}>+ New</Link>
+      </div>
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr><th style={{ textAlign: 'left', padding: 12 }}>Name</th><th style={{ textAlign: 'left', padding: 12 }}>Status</th><th style={{ textAlign: 'left', padding: 12 }}>Created</th><th style={{ padding: 12 }} /></tr></thead>
+          <tbody>
+            {!loading && items.length === 0 && <tr><td colSpan={4} style={{ padding: 18, color: '#94a3b8' }}>No records</td></tr>}
+            {items.map((item) => (
+              <tr key={item.id} style={{ borderTop: '1px solid #f1f5f9' }}>
+                <td style={{ padding: 12 }}>{item.name}</td>
+                <td style={{ padding: 12 }}>{item.status}</td>
+                <td style={{ padding: 12 }}>{new Date(item.createdAt).toLocaleString()}</td>
+                <td style={{ padding: 12 }}><Link to="/${slug}/\${item.id}">View</Link></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+`;
+}
+
+function adminResourceCreatePageTsx(pascal: string, title: string, slug: string): string {
+  return `import { useState } from 'react';
+import type { FormEvent } from 'react';
+import { useNavigate } from 'react-router';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+export default function ${pascal}CreatePage() {
+  const navigate = useNavigate();
+  const [name, setName] = useState('');
+  const [status, setStatus] = useState<'active' | 'inactive'>('active');
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+    const res = await fetch(API + '/v1/${slug}', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-tenant-id': tenantId, authorization: 'Bearer ' + token },
+      body: JSON.stringify({ name, status }),
+    });
+    if (res.ok) {
+      navigate('/${slug}');
+    }
+  }
+
+  return (
+    <form onSubmit={submit} style={{ maxWidth: 560, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '1rem', display: 'grid', gap: '0.75rem' }}>
+      <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Create ${title}</h2>
+      <input value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Name" style={{ border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 10px' }} />
+      <select value={status} onChange={(e) => setStatus(e.currentTarget.value === 'inactive' ? 'inactive' : 'active')} style={{ border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 10px' }}>
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+      </select>
+      <button type="submit" style={{ border: 'none', borderRadius: 8, background: '#2563eb', color: '#fff', padding: '8px 12px' }}>Create</button>
+    </form>
+  );
+}
+`;
+}
+
+function adminResourceDetailPageTsx(pascal: string, title: string, slug: string): string {
+  return `import { useEffect, useState } from 'react';
+import { useParams } from 'react-router';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type ${pascal}Item = { id: string; name: string; status: string; createdAt: string; updatedAt: string };
+
+export default function ${pascal}DetailPage() {
+  const params = useParams();
+  const [item, setItem] = useState<${pascal}Item | null>(null);
+
+  useEffect(() => {
+    if (!params.id) return;
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+    fetch(API + '/v1/${slug}/' + params.id, { headers: { 'x-tenant-id': tenantId, authorization: 'Bearer ' + token } })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setItem(data));
+  }, [params.id]);
+
+  if (!item) {
+    return <p style={{ color: '#94a3b8' }}>Loading ${title}...</p>;
+  }
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '1rem' }}>
+      <h2 style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: 0 }}>{item.name}</h2>
+      <p>Status: {item.status}</p>
+      <p>Created: {new Date(item.createdAt).toLocaleString()}</p>
+      <p>Updated: {new Date(item.updatedAt).toLocaleString()}</p>
+    </div>
+  );
+}
+`;
 }
 
 async function patchApiServerTs(targetDir: string, slug: string, pascal: string): Promise<void> {

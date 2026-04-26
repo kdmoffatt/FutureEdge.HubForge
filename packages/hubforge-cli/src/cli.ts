@@ -1,28 +1,41 @@
 import { runFeatureCommand } from './commands/feature.js';
+import { runInfraCommand } from './commands/infra.js';
 import { runInitCommand } from './commands/init.js';
+import { runUpgradeCommand } from './commands/upgrade.js';
 
 const HELP_TEXT = `HubForge CLI
 
 Usage:
   hubforge init <project-name> [options]
   hubforge feature add <feature-name> [options]
+  hubforge infra --target k8s
+  hubforge upgrade [--target <path>] [--force]
 
 Commands:
   init              Scaffold a new HubForge-ready project baseline.
   feature add       Add a feature skeleton to an existing project.
+  infra             Generate infrastructure manifests.
+  upgrade           Apply new HubForge template updates to an existing project.
 
 Init options:
   --template <pack>        full | full-postgres-rls | full-cloud | full-local (default: full)
   --db <provider>         sqlite | postgres | mysql | sqlserver (default: sqlite)
-  --tenant <mode>         shared | isolated (default: shared)
+  --tenant <mode>         shared | isolated | schema-per-tenant | db-per-tenant (default: shared)
   --ai <mode>             fastapi | none (default: fastapi)
   --auth <mode>           external | local (default: external)
   --auth-provider <kind>  zitadel | auth0 | keycloak | custom (default: zitadel)
   --force                 Overwrite target directory if it already exists
 
 Feature options:
-  --type <kind>           api | api-resource | ui | public-page | tenant-module | worker | auth-flow | billing-module | notifications-module | ai-agent (default: api)
+  --type <kind>           api | api-resource | admin-resource | ui | public-page | tenant-module | worker | auth-flow | billing-module | notifications-module | ai-agent (default: api)
   --target <path>         Path to target project (default: current directory)
+
+Infra options:
+  --target <kind>         k8s (required)
+
+Upgrade options:
+  --target <path>         Path to an existing HubForge project (default: current directory)
+  --force                 Overwrite existing files with latest template output
 
 Examples:
   hubforge init my-app --template full --db sqlite --tenant shared
@@ -35,6 +48,8 @@ Examples:
   hubforge feature add auth --type auth-flow
   hubforge feature add notifications --type notifications-module
   hubforge feature add billing --type api
+  hubforge infra --target k8s
+  hubforge upgrade --target ../fieldops-workhub-local
 `;
 
 export async function runCli(argv: string[]): Promise<void> {
@@ -57,6 +72,16 @@ export async function runCli(argv: string[]): Promise<void> {
 
   if (command === 'feature') {
     await runFeatureCommand(rest);
+    return;
+  }
+
+  if (command === 'infra') {
+    await runInfraCommand(rest);
+    return;
+  }
+
+  if (command === 'upgrade') {
+    await runUpgradeCommand(rest);
     return;
   }
 

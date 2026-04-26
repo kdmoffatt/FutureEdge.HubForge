@@ -9,12 +9,17 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'tsconfig.base.json'), tsconfigBase());
   await writeTextFile(path.join(targetDir, '.gitignore'), rootGitIgnore());
   await writeTextFile(path.join(targetDir, 'README.md'), projectReadme(options));
+  await writeTextFile(path.join(targetDir, 'hubforge.plugins.mjs'), hubforgePluginsFile());
 
   await writeTextFile(path.join(targetDir, '.env.local'), envFile(options, 'local'));
   await writeTextFile(path.join(targetDir, '.env.staging'), envFile(options, 'staging'));
   await writeTextFile(path.join(targetDir, '.env.production'), envFile(options, 'production'));
 
   await writeTextFile(path.join(targetDir, 'infra', 'compose', 'docker-compose.yml'), composeFile(options));
+  await writeTextFile(path.join(targetDir, 'infra', 'k8s', 'namespace.yaml'), k8sNamespaceYaml());
+  await writeTextFile(path.join(targetDir, 'infra', 'k8s', 'api-deployment.yaml'), k8sApiDeploymentYaml());
+  await writeTextFile(path.join(targetDir, 'infra', 'k8s', 'portal-deployment.yaml'), k8sPortalDeploymentYaml());
+  await writeTextFile(path.join(targetDir, 'infra', 'k8s', 'ui-deployment.yaml'), k8sUiDeploymentYaml());
 
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'package.json'), apiPackageJson());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'tsconfig.json'), appTsConfig());
@@ -36,17 +41,19 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'package.json'), portalPackageJson());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'tsconfig.json'), rrAppTsConfig());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'vite.config.ts'), rrViteConfig());
-  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'react-router.config.ts'), rrReactRouterConfig());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'react-router.config.ts'), rrReactRouterConfigPortal());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'root.tsx'), portalRootTsx());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes.ts'), rrRoutesTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'app.css'), tailwindCss());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'theme.ts'), portalThemeLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_index.tsx'), portalIndexRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', 'login.tsx'), portalLoginRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.tsx'), portalAppLayout(options));
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.dashboard._index.tsx'), portalDashboardRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.docs._index.tsx'), portalDocsRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings._index.tsx'), portalSettingsIndexRoute(options));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.theme._index.tsx'), portalThemeSettingsRoute());
   if (options.authServer) {
-    await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings._index.tsx'), portalSettingsIndexRoute());
     await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.auth-server._index.tsx'), portalAuthServerSettingsRoute());
   }
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'vitest.config.ts'), webVitestConfigTs());
@@ -56,7 +63,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'ui', 'package.json'), uiPackageJson());
   await writeTextFile(path.join(targetDir, 'apps', 'ui', 'tsconfig.json'), rrAppTsConfig());
   await writeTextFile(path.join(targetDir, 'apps', 'ui', 'vite.config.ts'), rrViteConfig());
-  await writeTextFile(path.join(targetDir, 'apps', 'ui', 'react-router.config.ts'), rrReactRouterConfig());
+  await writeTextFile(path.join(targetDir, 'apps', 'ui', 'react-router.config.ts'), rrReactRouterConfigUi());
   await writeTextFile(path.join(targetDir, 'apps', 'ui', 'app', 'root.tsx'), uiRootTsx());
   await writeTextFile(path.join(targetDir, 'apps', 'ui', 'app', 'routes.ts'), rrRoutesTs());
   await writeTextFile(path.join(targetDir, 'apps', 'ui', 'app', 'app.css'), tailwindCss());
@@ -95,6 +102,17 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'packages', 'sdk-server', 'tsconfig.json'), packageTsConfig());
   await writeTextFile(path.join(targetDir, 'packages', 'sdk-server', 'src', 'index.ts'), sdkServerIndexTs());
 
+  // packages/events (JetStream-ready event sourcing baseline)
+  await writeTextFile(path.join(targetDir, 'packages', 'events', 'package.json'), eventsPackageJson());
+  await writeTextFile(path.join(targetDir, 'packages', 'events', 'tsconfig.json'), packageTsConfig());
+  await writeTextFile(path.join(targetDir, 'packages', 'events', 'src', 'index.ts'), eventsIndexTs());
+  await writeTextFile(path.join(targetDir, 'packages', 'events', 'src', 'jetstream.ts'), eventsJetstreamTs());
+
+  // packages/hubforge-plugin-sdk
+  await writeTextFile(path.join(targetDir, 'packages', 'hubforge-plugin-sdk', 'package.json'), hubforgePluginSdkPackageJson());
+  await writeTextFile(path.join(targetDir, 'packages', 'hubforge-plugin-sdk', 'tsconfig.json'), packageTsConfig());
+  await writeTextFile(path.join(targetDir, 'packages', 'hubforge-plugin-sdk', 'src', 'index.ts'), hubforgePluginSdkIndexTs());
+
   // packages/db
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'package.json'), dbPackageJson());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'tsconfig.json'), packageTsConfig());
@@ -123,6 +141,7 @@ function rootPackageJson(projectName: string): string {
     scripts: {
       build: 'pnpm -r run build',
       dev: 'pnpm --filter @hubforge/api dev',
+      'dev:all': 'pnpm turbo dev',
       'dev:api': 'pnpm --filter @hubforge/api dev',
       'dev:ui': 'pnpm --filter @hubforge/ui-app dev',
       'dev:portal': 'pnpm --filter @hubforge/portal dev',
@@ -132,6 +151,7 @@ function rootPackageJson(projectName: string): string {
       'db:seed': 'pnpm --filter @hubforge/db db:seed',
       'infra:up': 'docker compose -f infra/compose/docker-compose.yml up -d',
       'infra:down': 'docker compose -f infra/compose/docker-compose.yml down',
+      'infra:k8s': 'echo "Apply manifests from infra/k8s with kubectl apply -f infra/k8s"',
       typecheck: 'pnpm -r run typecheck',
       test: 'vitest run --workspace vitest.workspace.ts',
       'test:watch': 'vitest --workspace vitest.workspace.ts',
@@ -261,7 +281,11 @@ ${options.aiMode === 'fastapi' ? `### AI service (apps/ai) — port 5000
 
 - **ORM:** [Prisma](https://www.prisma.io)
 - **Provider:** ${options.dbProvider}
-- **Multi-tenancy:** ${options.tenantMode === 'isolated' ? 'isolated (schema-per-tenant / RLS)' : 'shared database'}
+- **Multi-tenancy:** ${options.tenantMode === 'db-per-tenant'
+    ? 'database-per-tenant'
+    : options.tenantMode === 'schema-per-tenant' || options.tenantMode === 'isolated'
+      ? 'schema-per-tenant / isolated'
+      : 'shared database'}
 
 ### Packages
 
@@ -779,19 +803,38 @@ app.post('/v1/webhooks/dispatch', async (c) => {
 
 app.get('/', (c) => c.redirect('/docs'));
 
-app.get('/openapi.json', (c) => {
-  return c.json({
+function openApiFromHonoRoutes() {
+  const honoApp = app as unknown as { routes?: Array<{ method: string; path: string }> };
+  const paths: Record<string, Record<string, unknown>> = {};
+
+  for (const route of honoApp.routes ?? []) {
+    const method = route.method.toLowerCase();
+    if (method === 'options') {
+      continue;
+    }
+
+    const normalizedPath = route.path.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
+    const pathEntry = paths[normalizedPath] ?? {};
+    pathEntry[method] = {
+      summary: method.toUpperCase() + ' ' + normalizedPath,
+      responses: {
+        '200': { description: 'Success response' },
+      },
+    };
+    paths[normalizedPath] = pathEntry;
+  }
+
+  return {
     openapi: '3.1.0',
-    info: { title: 'HubForge API', version: '0.1.0', description: 'Generated API' },
+    info: { title: 'HubForge API', version: '0.1.0', description: 'Generated from Hono routes' },
     servers: [{ url: 'http://localhost:4000', description: 'Local API' }],
     jsonSchemaDialect: 'https://json-schema.org/draft/2020-12/schema',
-    paths: {
-      '/health': { get: { summary: 'Health check', responses: { '200': { description: 'OK' } } } },
-      '/v1/tenancy/context': { get: { summary: 'Tenant context', responses: { '200': { description: 'Context' } } } },
-      '/auth/login': { post: { summary: 'Login', responses: { '200': { description: 'Login success' } } } },
-      '/v1/auth/provider': { get: { summary: 'Auth provider profile', responses: { '200': { description: 'Profile' } } } },
-    },
-  });
+    paths,
+  };
+}
+
+app.get('/openapi.json', (c) => {
+  return c.json(openApiFromHonoRoutes());
 });
 
 app.get('/docs', (c) =>
@@ -1373,7 +1416,17 @@ export default defineConfig({
 `;
 }
 
-function rrReactRouterConfig(): string {
+function rrReactRouterConfigPortal(): string {
+  return `import type { Config } from '@react-router/dev/config';
+
+export default {
+  ssr: false,
+  appDirectory: 'app',
+} satisfies Config;
+`;
+}
+
+function rrReactRouterConfigUi(): string {
   return `import type { Config } from '@react-router/dev/config';
 
 export default {
@@ -1392,7 +1445,31 @@ export default flatRoutes() satisfies RouteConfig;
 }
 
 function tailwindCss(): string {
-  return `@import "tailwindcss";\n`;
+  return `@import "tailwindcss";
+
+:root {
+  --hf-font: Inter, ui-sans-serif, system-ui, sans-serif;
+  --hf-primary: #845adf;
+  --hf-primary-hover: #7045ce;
+  --hf-surface: #ffffff;
+  --hf-surface-alt: #f0f1f7;
+  --hf-foreground: #2a2f3e;
+  --hf-muted: #8c9097;
+  --hf-border: #e9edf4;
+  --hf-sidebar: #ffffff;
+  --hf-sidebar-text: #536485;
+  --hf-sidebar-active: #f0ebfc;
+  --hf-sidebar-active-text: #845adf;
+  --hf-header: #ffffff;
+}
+
+body {
+  margin: 0;
+  background: var(--hf-surface-alt);
+  color: var(--hf-foreground);
+  font-family: var(--hf-font);
+}
+`;
 }
 
 function uiRootTsx(): string {
@@ -1549,9 +1626,14 @@ function tenancyPackageJson(): string {
 }
 
 function tenancyIndexTs(): string {
-  return `export type TenantContext = {
+  return `export type TenantStrategy = 'shared' | 'isolated' | 'schema-per-tenant' | 'db-per-tenant';
+
+export type TenantContext = {
   tenantId: string;
   environment: string;
+  strategy: TenantStrategy;
+  schema: string;
+  databaseUrlOverride: string | null;
 };
 
 export function resolveTenantContext(input: {
@@ -1560,10 +1642,20 @@ export function resolveTenantContext(input: {
 }): TenantContext {
   const tenantId = input.tenantId ?? 'default-tenant';
   const environment = input.environment ?? 'local';
+  const strategy = (process.env['TENANT_MODE'] ?? 'shared') as TenantStrategy;
+  const schema = strategy === 'schema-per-tenant' || strategy === 'isolated' ? 'tenant_' + tenantId.replace(/-/g, '_') : 'public';
+  const databaseUrlOverride = strategy === 'db-per-tenant'
+    ? process.env['TENANT_DB_URL_PREFIX']
+      ? process.env['TENANT_DB_URL_PREFIX'] + tenantId
+      : null
+    : null;
 
   return {
     tenantId,
     environment,
+    strategy,
+    schema,
+    databaseUrlOverride,
   };
 }
 `;
@@ -2136,7 +2228,7 @@ export default function App() {
 function portalIndexRoute(): string {
   return `import { redirect } from 'react-router';
 
-export async function loader() {
+export async function clientLoader() {
   return redirect('/login');
 }
 
@@ -2178,44 +2270,63 @@ function portalLoginRoute(): string {
 
 function portalAppLayout(options: InitScaffoldOptions): string {
   const settingsNav = options.authServer
-    ? "{ href: '/settings', label: 'Settings' }, { href: '/settings/auth-server', label: 'Auth Server' }"
-    : "{ href: '/settings', label: 'Settings' }";
+    ? "{ href: '/settings', label: 'Settings' }, { href: '/settings/theme', label: 'Theme' }, { href: '/settings/auth-server', label: 'Auth Server' }"
+    : "{ href: '/settings', label: 'Settings' }, { href: '/settings/theme', label: 'Theme' }";
 
-  return `import { Outlet } from 'react-router';
+  return `import { Outlet, NavLink } from 'react-router';
+import { useEffect } from 'react';
 import type { LoaderFunctionArgs } from 'react-router';
+import { applyStoredPortalTheme } from '../lib/theme';
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function clientLoader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   return { pathname: url.pathname };
 }
 
 export default function AppLayout() {
+  useEffect(() => {
+    applyStoredPortalTheme();
+  }, []);
+
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#f9fafb' }}>
-      <aside style={{ width: 240, background: '#fff', borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ height: 56, display: 'flex', alignItems: 'center', padding: '0 1.5rem', borderBottom: '1px solid #e5e7eb' }}>
-          <span style={{ fontWeight: 600 }}>HubForge Portal</span>
+    <div style={{ display: 'flex', height: '100vh', background: 'var(--hf-surface-alt)', color: 'var(--hf-foreground)' }}>
+      <aside style={{ width: 240, background: 'var(--hf-sidebar)', borderRight: '1px solid var(--hf-border)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ height: 56, display: 'flex', alignItems: 'center', padding: '0 1.25rem', borderBottom: '1px solid var(--hf-border)' }}>
+          <span style={{ fontWeight: 700, color: 'var(--hf-primary)' }}>HubForge Portal</span>
         </div>
-        <nav style={{ padding: '1rem', flex: 1 }}>
+        <nav style={{ padding: '0.75rem 0.5rem', flex: 1, overflowY: 'auto' }}>
           {[{ href: '/dashboard', label: 'Dashboard' }, ${settingsNav}, { href: '/docs', label: 'API Docs' }].map(
             ({ href, label }) => (
-              <a key={href} href={href} style={{ display: 'block', padding: '8px 12px', borderRadius: 8, fontSize: '0.875rem', color: '#374151', textDecoration: 'none', marginBottom: 4 }}>
+              <NavLink
+                key={href}
+                to={href}
+                style={({ isActive }) => ({
+                  display: 'block',
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  fontSize: '0.875rem',
+                  textDecoration: 'none',
+                  marginBottom: 4,
+                  color: isActive ? 'var(--hf-sidebar-active-text)' : 'var(--hf-sidebar-text)',
+                  background: isActive ? 'var(--hf-sidebar-active)' : 'transparent',
+                })}
+              >
                 {label}
-              </a>
+              </NavLink>
             ),
           )}
         </nav>
-        <div style={{ padding: '1rem', borderTop: '1px solid #e5e7eb' }}>
+        <div style={{ padding: '1rem', borderTop: '1px solid var(--hf-border)' }}>
           <button
             onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('tenantId'); window.location.href = '/login'; }}
-            style={{ width: '100%', padding: '6px', borderRadius: 6, background: 'transparent', border: '1px solid #d1d5db', color: '#475569', cursor: 'pointer', fontSize: '0.8rem' }}
+            style={{ width: '100%', padding: '6px', borderRadius: 6, background: 'transparent', border: '1px solid var(--hf-border)', color: 'var(--hf-muted)', cursor: 'pointer', fontSize: '0.8rem' }}
           >
             Sign out
           </button>
         </div>
       </aside>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <header style={{ height: 56, background: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', padding: '0 1.5rem' }}>
+        <header style={{ height: 56, background: 'var(--hf-header)', borderBottom: '1px solid var(--hf-border)', display: 'flex', alignItems: 'center', padding: '0 1.5rem' }}>
           <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Workspace</span>
         </header>
         <main style={{ flex: 1, overflow: 'auto', padding: '1.5rem' }}>
@@ -2228,7 +2339,15 @@ export default function AppLayout() {
 `;
 }
 
-function portalSettingsIndexRoute(): string {
+function portalSettingsIndexRoute(options: InitScaffoldOptions): string {
+  const authServerLink = options.authServer
+    ? `
+        <Link to="/settings/auth-server" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Auth Server</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Store OIDC provider settings in your tenant database.</p>
+        </Link>`
+    : '';
+
   return `import { Link } from 'react-router';
 
 export default function SettingsIndexPage() {
@@ -2239,10 +2358,11 @@ export default function SettingsIndexPage() {
         Configure authentication and platform behavior after logging in with database credentials.
       </p>
       <div style={{ display: 'grid', gap: '0.75rem', maxWidth: 620 }}>
-        <Link to="/settings/auth-server" style={{ textDecoration: 'none', border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: '1rem' }}>
-          <p style={{ fontWeight: 700, color: '#0f172a', margin: '0 0 0.25rem' }}>Auth Server</p>
-          <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Store OIDC provider settings in your tenant database.</p>
+        <Link to="/settings/theme" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Theme</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Switch built-in admin themes or load a third-party CSS theme URL.</p>
         </Link>
+${authServerLink}
       </div>
     </div>
   );
@@ -2424,6 +2544,340 @@ function portalDocsRoute(): string {
     '  );',
     '}',
   ].join('\n') + '\n';
+}
+
+function portalThemeLibTs(): string {
+  return `export type ThemePreset = 'ynex-light' | 'slate' | 'forest';
+
+const PRESETS: Record<ThemePreset, Record<string, string>> = {
+  'ynex-light': {
+    '--hf-primary': '#845adf',
+    '--hf-primary-hover': '#7045ce',
+    '--hf-surface': '#ffffff',
+    '--hf-surface-alt': '#f0f1f7',
+    '--hf-foreground': '#2a2f3e',
+    '--hf-muted': '#8c9097',
+    '--hf-border': '#e9edf4',
+    '--hf-sidebar': '#ffffff',
+    '--hf-sidebar-text': '#536485',
+    '--hf-sidebar-active': '#f0ebfc',
+    '--hf-sidebar-active-text': '#845adf',
+    '--hf-header': '#ffffff',
+  },
+  slate: {
+    '--hf-primary': '#2563eb',
+    '--hf-primary-hover': '#1d4ed8',
+    '--hf-surface': '#0f172a',
+    '--hf-surface-alt': '#020617',
+    '--hf-foreground': '#e2e8f0',
+    '--hf-muted': '#94a3b8',
+    '--hf-border': '#1e293b',
+    '--hf-sidebar': '#0b1220',
+    '--hf-sidebar-text': '#93a2b8',
+    '--hf-sidebar-active': '#1e293b',
+    '--hf-sidebar-active-text': '#93c5fd',
+    '--hf-header': '#0b1220',
+  },
+  forest: {
+    '--hf-primary': '#15803d',
+    '--hf-primary-hover': '#166534',
+    '--hf-surface': '#ffffff',
+    '--hf-surface-alt': '#ecfdf5',
+    '--hf-foreground': '#14532d',
+    '--hf-muted': '#3f7a57',
+    '--hf-border': '#bbf7d0',
+    '--hf-sidebar': '#f0fdf4',
+    '--hf-sidebar-text': '#166534',
+    '--hf-sidebar-active': '#dcfce7',
+    '--hf-sidebar-active-text': '#14532d',
+    '--hf-header': '#f0fdf4',
+  },
+};
+
+export function applyStoredPortalTheme(): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const preset = (localStorage.getItem('hf_theme_preset') as ThemePreset | null) ?? 'ynex-light';
+  const customCssUrl = localStorage.getItem('hf_theme_css_url') ?? '';
+  applyPortalTheme(preset, customCssUrl);
+}
+
+export function applyPortalTheme(preset: ThemePreset, customCssUrl?: string): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const root = document.documentElement;
+  const tokens = PRESETS[preset] ?? PRESETS['ynex-light'];
+  Object.entries(tokens).forEach(([key, value]) => root.style.setProperty(key, value));
+
+  localStorage.setItem('hf_theme_preset', preset);
+
+  const existing = document.getElementById('hf-theme-external') as HTMLLinkElement | null;
+  const href = (customCssUrl ?? '').trim();
+  if (!href) {
+    existing?.remove();
+    localStorage.removeItem('hf_theme_css_url');
+    return;
+  }
+
+  if (existing) {
+    existing.href = href;
+  } else {
+    const link = document.createElement('link');
+    link.id = 'hf-theme-external';
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }
+  localStorage.setItem('hf_theme_css_url', href);
+}
+`;
+}
+
+function portalThemeSettingsRoute(): string {
+  return `import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
+import { applyPortalTheme, type ThemePreset } from '../lib/theme';
+
+const presets: ThemePreset[] = ['ynex-light', 'slate', 'forest'];
+
+export default function ThemeSettingsPage() {
+  const [preset, setPreset] = useState<ThemePreset>('ynex-light');
+  const [cssUrl, setCssUrl] = useState('');
+
+  useEffect(() => {
+    const storedPreset = (localStorage.getItem('hf_theme_preset') as ThemePreset | null) ?? 'ynex-light';
+    const storedCssUrl = localStorage.getItem('hf_theme_css_url') ?? '';
+    setPreset(storedPreset);
+    setCssUrl(storedCssUrl);
+  }, []);
+
+  function save(e: FormEvent) {
+    e.preventDefault();
+    applyPortalTheme(preset, cssUrl);
+  }
+
+  return (
+    <form onSubmit={save} style={{ maxWidth: 720, display: 'grid', gap: '0.75rem', background: 'var(--hf-surface)', border: '1px solid var(--hf-border)', borderRadius: 12, padding: '1rem' }}>
+      <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Portal Theme</h2>
+      <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.9rem' }}>
+        Pick a built-in admin theme or provide a third-party hosted CSS URL.
+      </p>
+      <label style={{ display: 'grid', gap: 6 }}>
+        <span style={{ fontSize: '0.85rem', color: 'var(--hf-muted)' }}>Theme preset</span>
+        <select value={preset} onChange={(e) => setPreset(e.currentTarget.value as ThemePreset)} style={{ border: '1px solid var(--hf-border)', borderRadius: 8, padding: '8px 10px' }}>
+          {presets.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </label>
+      <label style={{ display: 'grid', gap: 6 }}>
+        <span style={{ fontSize: '0.85rem', color: 'var(--hf-muted)' }}>Third-party theme CSS URL (optional)</span>
+        <input value={cssUrl} onChange={(e) => setCssUrl(e.currentTarget.value)} placeholder="https://example.com/admin-theme.css" style={{ border: '1px solid var(--hf-border)', borderRadius: 8, padding: '8px 10px' }} />
+      </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="submit" style={{ border: 'none', borderRadius: 8, background: 'var(--hf-primary)', color: '#fff', padding: '8px 14px', cursor: 'pointer' }}>Apply Theme</button>
+        <button type="button" onClick={() => { setCssUrl(''); applyPortalTheme(preset, ''); }} style={{ border: '1px solid var(--hf-border)', borderRadius: 8, background: 'transparent', color: 'var(--hf-foreground)', padding: '8px 14px', cursor: 'pointer' }}>Clear External CSS</button>
+      </div>
+    </form>
+  );
+}
+`;
+}
+
+function hubforgePluginsFile(): string {
+  return `/**
+ * HubForge plugin hooks.
+ * Add custom logic for init/feature/upgrade without forking the framework.
+ */
+export default {
+  async beforeInit(ctx) {
+    // console.log('[plugin] beforeInit', ctx.projectName);
+  },
+  async afterInit(ctx) {
+    // console.log('[plugin] afterInit', ctx.targetDir);
+  },
+};
+`;
+}
+
+function hubforgePluginSdkPackageJson(): string {
+  const pkg = {
+    name: '@hubforge/plugin-sdk',
+    version: '0.1.0',
+    private: true,
+    type: 'module',
+    main: './dist/index.js',
+    types: './dist/index.d.ts',
+    scripts: {
+      build: 'tsc -p tsconfig.json',
+      typecheck: 'tsc --noEmit -p tsconfig.json',
+    },
+    devDependencies: {
+      typescript: '^5.4.0',
+    },
+  };
+
+  return `${JSON.stringify(pkg, null, 2)}\n`;
+}
+
+function hubforgePluginSdkIndexTs(): string {
+  return `export type HookContext = {
+  cwd: string;
+  command: 'init' | 'feature' | 'infra' | 'upgrade';
+  args: string[];
+};
+
+export type HubForgeHooks = {
+  beforeInit?: (input: HookContext & { projectName: string; options: Record<string, string | boolean> }) => Promise<void> | void;
+  afterInit?: (input: HookContext & { projectName: string; targetDir: string }) => Promise<void> | void;
+  beforeFeature?: (input: HookContext & { featureName: string; type: string; targetDir: string }) => Promise<void> | void;
+  afterFeature?: (input: HookContext & { featureName: string; type: string; targetDir: string }) => Promise<void> | void;
+  beforeUpgrade?: (input: HookContext & { targetDir: string; force: boolean }) => Promise<void> | void;
+  afterUpgrade?: (input: HookContext & { targetDir: string; upgradedFiles: string[] }) => Promise<void> | void;
+};
+`;
+}
+
+function eventsPackageJson(): string {
+  const pkg = {
+    name: '@hubforge/events',
+    version: '0.1.0',
+    private: true,
+    type: 'module',
+    main: './dist/index.js',
+    types: './dist/index.d.ts',
+    scripts: {
+      build: 'tsc -p tsconfig.json',
+      typecheck: 'tsc --noEmit -p tsconfig.json',
+    },
+    dependencies: {
+      nats: '^2.29.3',
+      zod: '^3.23.0',
+    },
+    devDependencies: {
+      typescript: '^5.4.0',
+    },
+  };
+
+  return `${JSON.stringify(pkg, null, 2)}\n`;
+}
+
+function eventsIndexTs(): string {
+  return `import { z } from 'zod';
+import { createJetStreamClient } from './jetstream.js';
+
+export const domainEventSchema = z.object({
+  kind: z.string(),
+  tenantId: z.string(),
+  entityId: z.string(),
+  ts: z.number(),
+  payload: z.record(z.unknown()).default({}),
+});
+
+export type DomainEvent = z.infer<typeof domainEventSchema>;
+
+export async function publishDomainEvent(event: DomainEvent): Promise<void> {
+  const js = await createJetStreamClient();
+  const data = new TextEncoder().encode(JSON.stringify(event));
+  await js.publish('events.' + event.kind, data);
+}
+`;
+}
+
+function eventsJetstreamTs(): string {
+  return `import { connect } from 'nats';
+
+let cached: Awaited<ReturnType<typeof connect>> | null = null;
+
+export async function createJetStreamClient() {
+  if (!cached) {
+    cached = await connect({ servers: process.env['NATS_URL'] ?? 'nats://localhost:4222' });
+  }
+  return cached.jetstream();
+}
+`;
+}
+
+function k8sNamespaceYaml(): string {
+  return `apiVersion: v1
+kind: Namespace
+metadata:
+  name: hubforge
+`;
+}
+
+function k8sApiDeploymentYaml(): string {
+  return `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hubforge-api
+  namespace: hubforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hubforge-api
+  template:
+    metadata:
+      labels:
+        app: hubforge-api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/futureedgepro/hubforge-api:latest
+          ports:
+            - containerPort: 4000
+`;
+}
+
+function k8sPortalDeploymentYaml(): string {
+  return `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hubforge-portal
+  namespace: hubforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hubforge-portal
+  template:
+    metadata:
+      labels:
+        app: hubforge-portal
+    spec:
+      containers:
+        - name: portal
+          image: ghcr.io/futureedgepro/hubforge-portal:latest
+          ports:
+            - containerPort: 3001
+`;
+}
+
+function k8sUiDeploymentYaml(): string {
+  return `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hubforge-ui
+  namespace: hubforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hubforge-ui
+  template:
+    metadata:
+      labels:
+        app: hubforge-ui
+    spec:
+      containers:
+        - name: ui
+          image: ghcr.io/futureedgepro/hubforge-ui:latest
+          ports:
+            - containerPort: 3010
+`;
 }
 
 // API Client
