@@ -1,0 +1,16 @@
+{
+  "name": "futureedge-hubforge",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "hubforge": "pnpm --filter @hubforge/cli run cli --",
+    "hubforge:build": "pnpm --filter @hubforge/cli run build"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "_tmp_regen_verify",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm --filter @hubforge/api dev",
+    "dev:api": "pnpm --filter @hubforge/api dev",
+    "dev:ui": "pnpm --filter @hubforge/ui-app dev",
+    "dev:portal": "pnpm --filter @hubforge/portal dev",
+    "db:bootstrap": "pnpm --filter @hubforge/db db:bootstrap",
+    "db:migrate": "pnpm db:bootstrap && pnpm --filter @hubforge/db db:migrate",
+    "db:generate": "pnpm --filter @hubforge/db db:generate",
+    "db:seed": "pnpm --filter @hubforge/db db:seed",
+    "infra:up": "docker compose -f infra/compose/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/compose/docker-compose.yml down",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "vitest run --workspace vitest.workspace.ts",
+    "test:watch": "vitest --workspace vitest.workspace.ts",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "jsdom": "^26.1.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}
