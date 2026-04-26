@@ -1,3 +1,5 @@
+import { registerAssets2Routes } from './routes/assets2.js';
+import { registerAssetsRoutes } from './routes/assets.js';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -107,6 +109,8 @@ app.use('*', async (c, next) => {
 
 registerHealthRoutes(app);
 registerTenancyRoutes(app);
+registerAssets2Routes(app);
+registerAssetsRoutes(app);
 registerAuthRoutes(app);
 
 app.use('/v1/*', async (c, next) => {
@@ -160,19 +164,38 @@ app.post('/v1/webhooks/dispatch', async (c) => {
 
 app.get('/', (c) => c.redirect('/docs'));
 
-app.get('/openapi.json', (c) => {
-  return c.json({
+function openApiFromHonoRoutes() {
+  const honoApp = app as unknown as { routes?: Array<{ method: string; path: string }> };
+  const paths: Record<string, Record<string, unknown>> = {};
+
+  for (const route of honoApp.routes ?? []) {
+    const method = route.method.toLowerCase();
+    if (method === 'options') {
+      continue;
+    }
+
+    const normalizedPath = route.path.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
+    const pathEntry = paths[normalizedPath] ?? {};
+    pathEntry[method] = {
+      summary: method.toUpperCase() + ' ' + normalizedPath,
+      responses: {
+        '200': { description: 'Success response' },
+      },
+    };
+    paths[normalizedPath] = pathEntry;
+  }
+
+  return {
     openapi: '3.1.0',
-    info: { title: 'HubForge API', version: '0.1.0', description: 'Generated API' },
+    info: { title: 'HubForge API', version: '0.1.0', description: 'Generated from Hono routes' },
     servers: [{ url: 'http://localhost:4000', description: 'Local API' }],
     jsonSchemaDialect: 'https://json-schema.org/draft/2020-12/schema',
-    paths: {
-      '/health': { get: { summary: 'Health check', responses: { '200': { description: 'OK' } } } },
-      '/v1/tenancy/context': { get: { summary: 'Tenant context', responses: { '200': { description: 'Context' } } } },
-      '/auth/login': { post: { summary: 'Login', responses: { '200': { description: 'Login success' } } } },
-      '/v1/auth/provider': { get: { summary: 'Auth provider profile', responses: { '200': { description: 'Profile' } } } },
-    },
-  });
+    paths,
+  };
+}
+
+app.get('/openapi.json', (c) => {
+  return c.json(openApiFromHonoRoutes());
 });
 
 app.get('/docs', (c) =>

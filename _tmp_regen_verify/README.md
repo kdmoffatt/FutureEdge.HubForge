@@ -9,7 +9,7 @@
 | Setting | Value |
 |---------|-------|
 | Database | sqlite |
-| Tenancy mode | shared |
+| Tenancy mode | schema-per-tenant |
 | AI service | fastapi |
 | Auth mode | local |
 | Auth provider | zitadel |
@@ -47,7 +47,7 @@
 
 - **ORM:** [Prisma](https://www.prisma.io)
 - **Provider:** sqlite
-- **Multi-tenancy:** shared database
+- **Multi-tenancy:** schema-per-tenant / isolated
 
 ### Packages
 

@@ -1,0 +1,30 @@
+version: '3.9'
+
+services:
+  # SQLite default profile runs without a DB container
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+
+  nats:
+    image: nats:2-alpine
+    command: '-js -sd /data'
+    ports:
+      - '4222:4222'
+      - '8222:8222'
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: hubforge
+      MINIO_ROOT_PASSWORD: hubforge-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+  ai:
+    build: ../../apps/ai
+    ports:
+      - '5000:5000'

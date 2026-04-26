@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hubforge-portal
+  namespace: hubforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hubforge-portal
+  template:
+    metadata:
+      labels:
+        app: hubforge-portal
+    spec:
+      containers:
+        - name: portal
+          image: ghcr.io/futureedgepro/hubforge-portal:latest
+          ports:
+            - containerPort: 3001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hubforge-portal
+  namespace: hubforge
+spec:
+  selector:
+    app: hubforge-portal
+  ports:
+    - port: 3001
+      targetPort: 3001

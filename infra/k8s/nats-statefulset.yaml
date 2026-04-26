@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hubforge-nats
+  namespace: hubforge
+spec:
+  serviceName: hubforge-nats
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hubforge-nats
+  template:
+    metadata:
+      labels:
+        app: hubforge-nats
+    spec:
+      containers:
+        - name: nats
+          image: nats:2
+          args: ["-js"]
+          ports:
+            - containerPort: 4222
+            - containerPort: 8222
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hubforge-nats
+  namespace: hubforge
+spec:
+  selector:
+    app: hubforge-nats
+  ports:
+    - name: client
+      port: 4222
+      targetPort: 4222
+    - name: monitor
+      port: 8222
+      targetPort: 8222

@@ -104,6 +104,16 @@ Implemented initial HubForge CLI foundation and added structured documentation t
 - Generated API baseline now includes structured logging, tracing headers, rate limiting, metrics endpoint, cache baseline, and OpenAPI JSON endpoint.
 - Generated API baseline now includes CORS middleware, interactive Scalar API Reference docs (`/docs`), OpenAPI 3.1 output, and `/auth/*` + `/v1/auth/*` compatibility behavior.
 - Portal baseline now includes a dedicated `/docs` route that embeds the Scalar API Reference in an iframe, with a sidebar nav entry.
+- Added plugin hook system (`hubforge.plugins.mjs`) with lifecycle support in init/feature/upgrade flows (`beforeInit`, `afterInit`, `beforeFeature`, `afterFeature`, `beforeUpgrade`, `afterUpgrade`).
+- Added `hubforge infra --target k8s` command and scaffolded baseline manifests under `infra/k8s`.
+- Added `hubforge upgrade` command to apply latest template changes to existing generated projects.
+- Added interactive `hubforge init` prompt mode when no flags are supplied.
+- Added new tenancy modes (`schema-per-tenant`, `db-per-tenant`) and extended generated tenancy helpers/environment strategy settings.
+- Added JetStream-ready events scaffold in `packages/events` (`nats` + publish helper).
+- Added OpenAPI generation from Hono route registry (runtime-derived `/openapi.json`) in framework template and FieldOps demo API.
+- Added `feature add --type admin-resource` generator (CRUD API + portal list/create/detail views).
+- Updated generated portal admin theme baseline to be token-driven and aligned with reference style; added theme settings route and third-party CSS URL hook for theme extensibility.
+- Updated FieldOps demo portal with the new theme engine/settings page and switched portal React Router config to client-rendered mode (`ssr: false`) to fix authenticated data loading with localStorage tokens.
 - **Scalar migration (Swagger → Scalar API Reference)**: Replaced Swagger UI (`swagger-ui-dist@5`) with Scalar API Reference (CDN `@scalar/api-reference@latest`) in both FieldOps runtime (`apps/api/src/server.ts`) and the HubForge full-pack template (`apiServerTs()`). Scalar is zero npm-dep (CDN only) and is rendered via `<script id="api-reference" data-url="/openapi.json"></script>`. A dedicated portal `/docs` route (`_app.docs._index.tsx`) embeds the Scalar UI in a full-height iframe; the sidebar nav was updated with an API Docs entry in both FieldOps and the generator template. All typechecks pass; regeneration validation confirmed clean.
 - `pnpm hubforge:build` completed successfully after framework template updates for CORS/docs/auth compatibility.
 - Regeneration validation rerun (`_tmp_regen_verify`) after template fixes:
