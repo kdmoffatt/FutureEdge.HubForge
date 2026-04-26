@@ -1,0 +1,12 @@
+{
+  "name": "_tmp_auth_features",
+  "framework": "HubForge",
+  "version": "0.2.0",
+  "templatePack": "full",
+  "dbProvider": "sqlite",
+  "tenantMode": "shared",
+  "aiMode": "fastapi",
+  "authMode": "external",
+  "authProvider": "zitadel",
+  "generatedAt": "2026-04-25T12:41:58.227Z"
+}
