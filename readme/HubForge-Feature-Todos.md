@@ -81,6 +81,18 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] Portal admin theme baseline aligned to reference style with built-in presets
 - [x] Third-party theme plugin mechanism via external theme CSS URL injection
 
+## AI-centric completion wave (current execution)
+
+- [x] Settings scope expansion (`environmentId`, `scope`) with API/UI support
+- [x] Full RBAC management parity (assignment + edit/delete + permissions CRUD)
+- [ ] Background jobs scheduler + cron model + worker orchestration scripts
+- [ ] Stripe webhook + subscription lifecycle + local mock billing fallback
+- [ ] Notification template model + provider abstraction + delivery log UI
+- [ ] AI chat assistant endpoints + portal assistant page + permission gating
+- [ ] AI scheduler real provider integration (OpenAI/Azure) with mock fallback
+- [ ] CLI enhancements: `hubforge init --seed`, `hubforge db seed`, `--ai-provider`, `--ai-key`
+- [ ] FieldOps regeneration/upgrade script to apply all new generated modules safely
+
 ## Platform services checklist (latest scan)
 
 - [x] ORM baseline (Prisma schema + migrations + bootstrap)

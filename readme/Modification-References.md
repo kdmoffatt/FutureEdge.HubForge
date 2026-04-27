@@ -2,6 +2,56 @@
 
 This file tracks implementation changes made in this session.
 
+## Latest update (framework template parity pass)
+
+Completed framework-level parity updates in generator templates so newly scaffolded projects inherit scoped settings and full RBAC behaviors.
+
+- Settings scope expansion is now implemented in `full-pack.ts` templates:
+  - `Setting` model includes `environmentId` + `scope` and composite unique key
+  - `SettingsService` uses scope/environment-aware read/write/list/delete/listModules
+  - API settings routes support scoped access and `GET /v1/settings/modules`
+  - Default seed logic now writes settings with scoped/environment-safe semantics
+- Tenant module seed generator now writes module settings with scoped/environment-safe semantics in `commands/feature.ts`
+- RBAC parity is now implemented in scaffolded API/portal templates:
+  - API endpoints for user updates/deletes, user-role add/remove, role update/delete, role-permission add/remove, and permission CRUD
+  - Portal templates for users and roles now support edit/delete and assignment management
+  - New scaffolded permissions admin page (`/permissions`) with CRUD controls and sidebar navigation
+
+Validation completed for framework template pass:
+
+- `pnpm --filter @hubforge/cli run build` passed
+
+## Latest update (FieldOps upgrade pass)
+
+Implemented a major FieldOps sample upgrade pass for RBAC completeness and scoped settings.
+
+- FieldOps API RBAC routes now support:
+  - `POST /v1/user-roles`
+  - `DELETE /v1/user-roles/:id`
+  - `POST /v1/role-permissions`
+  - `DELETE /v1/role-permissions/:id`
+  - `DELETE /v1/users/:userId`
+  - `DELETE /v1/roles/:roleId`
+  - `POST|PUT|DELETE /v1/permissions`
+- FieldOps portal now supports:
+  - User edit/delete + role assignment/removal
+  - Role edit/delete + permission assignment/removal
+  - New permissions admin page (`/permissions`) with CRUD controls
+- FieldOps settings system extended with scope and environment awareness:
+  - `Setting` model now includes `environmentId` and `scope`
+  - Composite uniqueness updated to `(tenantId, environmentId, scope, module, key)`
+  - Settings service now accepts scoped/environment-aware read/write operations
+  - Settings API now supports scoped module listing (`GET /v1/settings/modules`)
+
+Validation completed for FieldOps:
+
+- `pnpm --filter @hubforge/db db:generate` passed
+- `pnpm --filter @hubforge/db typecheck` passed
+- `pnpm --filter @hubforge/api typecheck` passed
+- `pnpm --filter @hubforge/portal typecheck` passed
+- `pnpm --filter @hubforge/api build` passed
+- `pnpm --filter @hubforge/portal build` passed
+
 ## Summary
 
 Implemented initial HubForge CLI foundation and added structured documentation tracking under `readme/`.

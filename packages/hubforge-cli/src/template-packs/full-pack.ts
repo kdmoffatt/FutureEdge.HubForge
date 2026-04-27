@@ -60,6 +60,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.dashboard._index.tsx'), portalDashboardRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.users._index.tsx'), portalUsersRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.roles._index.tsx'), portalRolesRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.permissions._index.tsx'), portalPermissionsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.jobs._index.tsx'), portalJobsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.audit-log._index.tsx'), portalAuditLogRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.docs._index.tsx'), portalDocsRoute());
@@ -251,7 +252,7 @@ dist/
 function projectReadme(options: InitScaffoldOptions): string {
   return `# ${options.projectName}
 
-> Scaffolded with [HubForge CLI](https://github.com/FutureEdgePro/FutureEdge.HubForge) — opinionated full-stack SaaS scaffolding for TypeScript monorepos.
+> Scaffolded with [HubForge CLI](https://github.com/FutureEdgePro/FutureEdge.HubForge) - opinionated full-stack SaaS scaffolding for TypeScript monorepos.
 
 ---
 
@@ -269,27 +270,27 @@ function projectReadme(options: InitScaffoldOptions): string {
 
 ## Application stack
 
-### API (apps/api) — port 4000
+### API (apps/api) - port 4000
 
-- **Framework:** [Hono v4](https://hono.dev) — lightweight, edge-ready HTTP framework
+- **Framework:** [Hono v4](https://hono.dev) - lightweight, edge-ready HTTP framework
 - **Auth:** JWT/OIDC validation via \`jose\` (JWKS discovery for ${options.authProvider})
 - **Webhooks:** BullMQ + Redis retry queue with exponential backoff
 - **Push:** Firebase Admin SDK for FCM push notifications
 - **Validation:** Zod request schemas
 
-### Public site (apps/ui) — port 3010
+### Public site (apps/ui) - port 3010
 
-- **Framework:** [React Router v7](https://reactrouter.com) — server-side rendering (SSR)
+- **Framework:** [React Router v7](https://reactrouter.com) - server-side rendering (SSR)
 - **Styling:** Tailwind CSS v4
 - **Build:** Vite 5
 
-### Authenticated portal (apps/portal) — port 3001
+### Authenticated portal (apps/portal) - port 3001
 
-- **Framework:** [React Router v7](https://reactrouter.com) — SSR, protected layout hierarchy
+- **Framework:** [React Router v7](https://reactrouter.com) - SSR, protected layout hierarchy
 - **Styling:** Tailwind CSS v4
 - **Build:** Vite 5
 
-${options.aiMode === 'fastapi' ? `### AI service (apps/ai) — port 5000
+${options.aiMode === 'fastapi' ? `### AI service (apps/ai) - port 5000
 
 - **Framework:** [FastAPI](https://fastapi.tiangolo.com) (Python 3.11+)
 - **ASGI:** Uvicorn
@@ -437,7 +438,7 @@ pnpm test
 # Watch mode
 pnpm test:watch
 
-# End-to-end (Playwright — requires apps running or uses webServer config)
+# End-to-end (Playwright - requires apps running or uses webServer config)
 pnpm test:e2e
 \`\`\`
 
@@ -1539,45 +1540,114 @@ function apiSettingsRouteTs(): string {
 import { SettingsService } from '@hubforge/db';
 import { requireAuth } from '../lib/auth.js';
 
+type SettingScope = 'tenant' | 'environment' | 'system';
+
+function scopeFromRequest(raw: string | undefined): SettingScope {
+  if (raw === 'environment' || raw === 'system') {
+    return raw;
+  }
+  return 'tenant';
+}
+
 export function registerSettingsRoutes(app: Hono): void {
+  app.get('/v1/settings/modules', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const environmentId = c.req.header('x-environment-id') ?? null;
+    const scope = scopeFromRequest(c.req.query('scope'));
+
+    try {
+      const modules = await SettingsService.listModules(tenantId, { environmentId, scope });
+      return c.json(modules);
+    } catch (err) {
+      console.error('Error fetching settings modules:', err);
+      return c.json({ error: 'Failed to fetch settings modules' }, 500);
+    }
+  });
+
   app.get('/v1/settings/:module', requireAuth, async (c) => {
     const tenantId = c.req.header('x-tenant-id');
+    const environmentId = c.req.header('x-environment-id') ?? null;
+    const scope = scopeFromRequest(c.req.query('scope'));
     const module = c.req.param('module');
-    if (!tenantId || !module) return c.json({ error: 'x-tenant-id and module are required' }, 400);
 
-    const settings = await SettingsService.getAll(tenantId, module);
-    return c.json(settings);
+    if (!module) {
+      return c.json({ error: 'module is required' }, 400);
+    }
+
+    try {
+      const settings = await SettingsService.list(tenantId, module, { environmentId, scope });
+      return c.json(settings);
+    } catch (err) {
+      console.error('Error fetching settings:', err);
+      return c.json({ error: 'Failed to fetch settings' }, 500);
+    }
   });
 
   app.get('/v1/settings/:module/:key', requireAuth, async (c) => {
     const tenantId = c.req.header('x-tenant-id');
+    const environmentId = c.req.header('x-environment-id') ?? null;
+    const scope = scopeFromRequest(c.req.query('scope'));
     const module = c.req.param('module');
     const key = c.req.param('key');
-    if (!tenantId || !module || !key) return c.json({ error: 'x-tenant-id, module, and key are required' }, 400);
 
-    const value = await SettingsService.get(tenantId, module, key);
-    return c.json({ value });
+    if (!module || !key) {
+      return c.json({ error: 'module and key are required' }, 400);
+    }
+
+    try {
+      const value = await SettingsService.get(tenantId, module, key, null, { environmentId, scope });
+      return c.json({ module, key, value, scope, environmentId });
+    } catch (err) {
+      console.error('Error fetching setting:', err);
+      return c.json({ error: 'Failed to fetch setting' }, 500);
+    }
   });
 
   app.put('/v1/settings/:module/:key', requireAuth, async (c) => {
     const tenantId = c.req.header('x-tenant-id');
+    const environmentId = c.req.header('x-environment-id') ?? null;
     const module = c.req.param('module');
     const key = c.req.param('key');
-    if (!tenantId || !module || !key) return c.json({ error: 'x-tenant-id, module, and key are required' }, 400);
 
-    const body = (await c.req.json().catch(() => ({}))) as { value?: unknown };
-    await SettingsService.set(tenantId, module, key, (body.value ?? null) as string | number | boolean | object | null);
-    return c.json({ ok: true });
+    if (!module || !key) {
+      return c.json({ error: 'module and key are required' }, 400);
+    }
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const value = body['value'];
+    const scope = scopeFromRequest(typeof body['scope'] === 'string' ? body['scope'] : c.req.query('scope'));
+
+    if (value === undefined) {
+      return c.json({ error: 'value is required' }, 400);
+    }
+
+    try {
+      await SettingsService.set(tenantId, module, key, value, { environmentId, scope });
+      return c.json({ success: true, module, key, value, scope, environmentId });
+    } catch (err) {
+      console.error('Error setting value:', err);
+      return c.json({ error: 'Failed to update setting' }, 500);
+    }
   });
 
   app.delete('/v1/settings/:module/:key', requireAuth, async (c) => {
     const tenantId = c.req.header('x-tenant-id');
+    const environmentId = c.req.header('x-environment-id') ?? null;
+    const scope = scopeFromRequest(c.req.query('scope'));
     const module = c.req.param('module');
     const key = c.req.param('key');
-    if (!tenantId || !module || !key) return c.json({ error: 'x-tenant-id, module, and key are required' }, 400);
 
-    await SettingsService.delete(tenantId, module, key);
-    return c.json({ ok: true });
+    if (!module || !key) {
+      return c.json({ error: 'module and key are required' }, 400);
+    }
+
+    try {
+      await SettingsService.delete(tenantId, module, key, { environmentId, scope });
+      return c.json({ success: true });
+    } catch (err) {
+      console.error('Error deleting setting:', err);
+      return c.json({ error: 'Failed to delete setting' }, 500);
+    }
   });
 }
 `;
@@ -1590,40 +1660,161 @@ import { requireAuth } from '../lib/auth.js';
 
 export function registerUsersRoutes(app: Hono): void {
   app.get('/v1/users', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
     const users = await prisma.user.findMany({
+      where: {
+        memberships: {
+          some: { tenantId },
+        },
+      },
       include: {
-        memberships: true,
-        userRoles: { include: { role: true } },
+        memberships: { where: { tenantId } },
+        userRoles: {
+          where: { role: { tenantId } },
+          include: { role: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+
     return c.json(users);
   });
 
   app.post('/v1/users', requireAuth, async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { email?: unknown; name?: unknown };
-    if (typeof body.email !== 'string') return c.json({ error: 'email is required' }, 400);
+    const tenantId = c.req.header('x-tenant-id');
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const email = body['email'];
+    const name = body['name'];
 
-    const created = await prisma.user.create({
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (typeof email !== 'string') return c.json({ error: 'email is required' }, 400);
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return c.json({ error: 'User already exists' }, 409);
+
+    const user = await prisma.user.create({
       data: {
-        email: body.email,
-        name: typeof body.name === 'string' ? body.name : null,
+        email,
+        name: typeof name === 'string' ? name : null,
       },
     });
-    return c.json(created, 201);
+
+    await prisma.membership.upsert({
+      where: { tenantId_userId: { tenantId, userId: user.id } },
+      update: {},
+      create: { tenantId, userId: user.id, role: 'member' },
+    });
+
+    const hydrated = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        memberships: { where: { tenantId } },
+        userRoles: {
+          where: { role: { tenantId } },
+          include: { role: true },
+        },
+      },
+    });
+
+    return c.json(hydrated, 201);
   });
 
-  app.post('/v1/users/:userId/roles/:roleId', requireAuth, async (c) => {
+  app.put('/v1/users/:userId', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
     const userId = c.req.param('userId');
-    const roleId = c.req.param('roleId');
-    if (!userId || !roleId) return c.json({ error: 'userId and roleId are required' }, 400);
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (!userId) return c.json({ error: 'userId is required' }, 400);
 
-    await prisma.userRole.upsert({
-      where: { userId_roleId: { userId, roleId } },
-      update: {},
-      create: { userId, roleId },
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const update: Record<string, unknown> = {};
+    if (typeof body['name'] === 'string') update.name = body['name'];
+    if (typeof body['email'] === 'string') update.email = body['email'];
+
+    const membership = await prisma.membership.findFirst({ where: { tenantId, userId } });
+    if (!membership) return c.json({ error: 'User not found in tenant' }, 404);
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: update,
+      include: {
+        memberships: { where: { tenantId } },
+        userRoles: {
+          where: { role: { tenantId } },
+          include: { role: true },
+        },
+      },
     });
-    return c.json({ ok: true });
+
+    return c.json(user);
+  });
+
+  app.delete('/v1/users/:userId', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const userId = c.req.param('userId');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (!userId) return c.json({ error: 'userId is required' }, 400);
+
+    const membership = await prisma.membership.findFirst({ where: { tenantId, userId } });
+    if (!membership) return c.json({ error: 'User not found in tenant' }, 404);
+
+    const tenantRoleIds = await prisma.role.findMany({ where: { tenantId }, select: { id: true } });
+    await prisma.userRole.deleteMany({
+      where: {
+        userId,
+        roleId: { in: tenantRoleIds.map((r) => r.id) },
+      },
+    });
+
+    await prisma.membership.deleteMany({ where: { tenantId, userId } });
+    const remainingMemberships = await prisma.membership.count({ where: { userId } });
+    if (remainingMemberships === 0) {
+      await prisma.user.delete({ where: { id: userId } });
+    }
+
+    return c.json({ success: true });
+  });
+
+  app.post('/v1/user-roles', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const userId = body['userId'];
+    const roleId = body['roleId'];
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (typeof userId !== 'string' || typeof roleId !== 'string') {
+      return c.json({ error: 'userId and roleId are required' }, 400);
+    }
+
+    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) return c.json({ error: 'Role not found in tenant' }, 404);
+
+    const membership = await prisma.membership.findFirst({ where: { tenantId, userId } });
+    if (!membership) return c.json({ error: 'User must belong to tenant before assignment' }, 400);
+
+    const assignment = await prisma.userRole.create({
+      data: { userId, roleId },
+      include: { role: true },
+    });
+    return c.json(assignment, 201);
+  });
+
+  app.delete('/v1/user-roles/:id', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const id = c.req.param('id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (!id) return c.json({ error: 'id is required' }, 400);
+
+    const assignment = await prisma.userRole.findUnique({
+      where: { id },
+      include: { role: true },
+    });
+    if (!assignment || assignment.role.tenantId !== tenantId) {
+      return c.json({ error: 'Assignment not found' }, 404);
+    }
+
+    const removed = await prisma.userRole.delete({ where: { id } });
+    return c.json(removed);
   });
 }
 
@@ -1637,44 +1828,154 @@ export function registerRolesRoutes(app: Hono): void {
       include: { permissions: { include: { permission: true } } },
       orderBy: { createdAt: 'desc' },
     });
+
     return c.json(roles);
   });
 
   app.post('/v1/roles', requireAuth, async (c) => {
     const tenantId = c.req.header('x-tenant-id');
-    const body = (await c.req.json().catch(() => ({}))) as { name?: unknown; description?: unknown };
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const name = body['name'];
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
-    if (typeof body.name !== 'string') return c.json({ error: 'name is required' }, 400);
+    if (typeof name !== 'string') return c.json({ error: 'name is required' }, 400);
 
     const role = await prisma.role.create({
       data: {
         tenantId,
-        name: body.name,
-        description: typeof body.description === 'string' ? body.description : null,
+        name,
+        description: typeof body['description'] === 'string' ? body['description'] : null,
       },
+      include: { permissions: { include: { permission: true } } },
     });
     return c.json(role, 201);
   });
 
-  app.post('/v1/roles/:roleId/permissions/:permissionId', requireAuth, async (c) => {
+  app.put('/v1/roles/:roleId', requireAuth, async (c) => {
     const roleId = c.req.param('roleId');
-    const permissionId = c.req.param('permissionId');
-    if (!roleId || !permissionId) return c.json({ error: 'roleId and permissionId are required' }, 400);
+    if (!roleId) return c.json({ error: 'roleId is required' }, 400);
 
-    await prisma.rolePermission.upsert({
-      where: { roleId_permissionId: { roleId, permissionId } },
-      update: {},
-      create: { roleId, permissionId },
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const update: Record<string, unknown> = {};
+    if (typeof body['name'] === 'string') update.name = body['name'];
+    if (typeof body['description'] === 'string') update.description = body['description'];
+
+    const role = await prisma.role.update({
+      where: { id: roleId },
+      data: update,
+      include: { permissions: { include: { permission: true } } },
+    });
+    return c.json(role);
+  });
+
+  app.delete('/v1/roles/:roleId', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const roleId = c.req.param('roleId');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (!roleId) return c.json({ error: 'roleId is required' }, 400);
+
+    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) return c.json({ error: 'Role not found' }, 404);
+
+    await prisma.role.delete({ where: { id: roleId } });
+    return c.json({ success: true });
+  });
+
+  app.post('/v1/role-permissions', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const roleId = body['roleId'];
+    const permissionId = body['permissionId'];
+
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (typeof roleId !== 'string' || typeof permissionId !== 'string') {
+      return c.json({ error: 'roleId and permissionId are required' }, 400);
+    }
+
+    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) return c.json({ error: 'Role not found in tenant' }, 404);
+
+    const assignment = await prisma.rolePermission.create({
+      data: { roleId, permissionId },
+      include: { permission: true },
     });
 
-    return c.json({ ok: true });
+    return c.json(assignment, 201);
+  });
+
+  app.delete('/v1/role-permissions/:id', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const id = c.req.param('id');
+
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (!id) return c.json({ error: 'id is required' }, 400);
+
+    const assignment = await prisma.rolePermission.findUnique({
+      where: { id },
+      include: { role: true },
+    });
+    if (!assignment || assignment.role.tenantId !== tenantId) {
+      return c.json({ error: 'Assignment not found' }, 404);
+    }
+
+    const removed = await prisma.rolePermission.delete({ where: { id } });
+    return c.json(removed);
   });
 }
 
 export function registerPermissionsRoutes(app: Hono): void {
-  app.get('/v1/permissions', requireAuth, async () => {
-    const permissions = await prisma.permission.findMany({ orderBy: [{ module: 'asc' }, { action: 'asc' }] });
-    return Response.json(permissions);
+  app.get('/v1/permissions', requireAuth, async (c) => {
+    const permissions = await prisma.permission.findMany({
+      orderBy: [{ module: 'asc' }, { action: 'asc' }],
+    });
+
+    return c.json(permissions);
+  });
+
+  app.post('/v1/permissions', requireAuth, async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const module = body['module'];
+    const action = body['action'];
+    const description = body['description'];
+
+    if (typeof module !== 'string' || typeof action !== 'string') {
+      return c.json({ error: 'module and action are required' }, 400);
+    }
+
+    const permission = await prisma.permission.create({
+      data: {
+        module,
+        action,
+        description: typeof description === 'string' ? description : null,
+      },
+    });
+
+    return c.json(permission, 201);
+  });
+
+  app.put('/v1/permissions/:permissionId', requireAuth, async (c) => {
+    const permissionId = c.req.param('permissionId');
+    if (!permissionId) return c.json({ error: 'permissionId is required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const update: Record<string, unknown> = {};
+    if (typeof body['module'] === 'string') update.module = body['module'];
+    if (typeof body['action'] === 'string') update.action = body['action'];
+    if (typeof body['description'] === 'string') update.description = body['description'];
+
+    const permission = await prisma.permission.update({
+      where: { id: permissionId },
+      data: update,
+    });
+
+    return c.json(permission);
+  });
+
+  app.delete('/v1/permissions/:permissionId', requireAuth, async (c) => {
+    const permissionId = c.req.param('permissionId');
+    if (!permissionId) return c.json({ error: 'permissionId is required' }, 400);
+
+    await prisma.permission.delete({ where: { id: permissionId } });
+    return c.json({ success: true });
   });
 }
 `;
@@ -1836,29 +2137,150 @@ export default flatRoutes() satisfies RouteConfig;
 }
 
 function tailwindCss(): string {
-  return `@import "tailwindcss";
+  return `@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
 
 :root {
-  --hf-font: Inter, ui-sans-serif, system-ui, sans-serif;
-  --hf-primary: #845adf;
-  --hf-primary-hover: #7045ce;
-  --hf-surface: #ffffff;
-  --hf-surface-alt: #f0f1f7;
-  --hf-foreground: #2a2f3e;
-  --hf-muted: #8c9097;
-  --hf-border: #e9edf4;
-  --hf-sidebar: #ffffff;
-  --hf-sidebar-text: #536485;
-  --hf-sidebar-active: #f0ebfc;
-  --hf-sidebar-active-text: #845adf;
-  --hf-header: #ffffff;
+  --hf-font: "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, sans-serif;
+  --hf-primary: #2563eb;
+  --hf-primary-hover: #1d4ed8;
+  --hf-primary-soft: rgba(37, 99, 235, 0.12);
+  --hf-surface: rgba(255, 255, 255, 0.92);
+  --hf-surface-alt: #f4f7fb;
+  --hf-surface-muted: #eef3f8;
+  --hf-foreground: #172033;
+  --hf-muted: #617089;
+  --hf-border: rgba(148, 163, 184, 0.22);
+  --hf-border-strong: rgba(100, 116, 139, 0.32);
+  --hf-sidebar: linear-gradient(180deg, #0f172a 0%, #111c34 100%);
+  --hf-sidebar-text: #afbdd4;
+  --hf-sidebar-active: rgba(255, 255, 255, 0.08);
+  --hf-sidebar-active-text: #f8fbff;
+  --hf-header: rgba(255, 255, 255, 0.82);
+  --hf-card-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  --hf-card-shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
 }
 
 body {
   margin: 0;
-  background: var(--hf-surface-alt);
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 28%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 26%),
+    var(--hf-surface-alt);
   color: var(--hf-foreground);
   font-family: var(--hf-font);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--hf-primary);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--hf-foreground);
+  border: 1px solid var(--hf-border);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--hf-muted) 82%, white 18%);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--hf-primary) 36%, white 64%);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--hf-primary) 12%, transparent 88%);
+}
+
+select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--hf-muted) 50%),
+    linear-gradient(135deg, var(--hf-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 2px),
+    calc(100% - 12px) calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 2.25rem;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.025em;
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+thead {
+  background: color-mix(in srgb, var(--hf-surface-muted) 78%, white 22%);
+}
+
+tbody tr {
+  transition: background-color 140ms ease;
+}
+
+tbody tr:hover {
+  background: color-mix(in srgb, var(--hf-primary-soft) 44%, white 56%);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 `;
 }
@@ -2363,57 +2785,169 @@ function dbSettingsTs(): string {
   return `import { prisma } from './index.js';
 
 export type SettingValue = string | number | boolean | object | null;
+export type SettingScope = 'tenant' | 'environment' | 'system';
+
+function resolveScope(tenantId: string | undefined | null, scope?: SettingScope): SettingScope {
+  if (scope) return scope;
+  return tenantId ? 'tenant' : 'system';
+}
+
+function parseSettingValue(setting: { value: string; dataType: string }, fallback: SettingValue = null): SettingValue {
+  if (setting.dataType === 'json') {
+    try {
+      return JSON.parse(setting.value);
+    } catch {
+      return fallback;
+    }
+  }
+  if (setting.dataType === 'number') {
+    return Number(setting.value);
+  }
+  if (setting.dataType === 'boolean') {
+    return setting.value === 'true';
+  }
+  return setting.value;
+}
 
 export class SettingsService {
   static async get(
-    tenantId: string | null,
+    tenantId: string | undefined | null,
     module: string,
     key: string,
     defaultValue: SettingValue = null,
+    options?: { environmentId?: string | null; scope?: SettingScope },
   ): Promise<SettingValue> {
-    const setting = await (prisma.setting.findUnique as any)({
-      where: { tenantId_module_key: { tenantId, module, key } },
+    const scope = resolveScope(tenantId, options?.scope);
+    const environmentId = options?.environmentId ?? null;
+    const setting = await (prisma.setting.findFirst as any)({
+      where: {
+        tenantId: tenantId ?? null,
+        environmentId,
+        scope,
+        module,
+        key,
+      },
+      orderBy: { createdAt: 'desc' },
     });
 
     if (!setting) return defaultValue;
-    if (setting.dataType === 'number') return Number(setting.value);
-    if (setting.dataType === 'boolean') return setting.value === 'true';
-    if (setting.dataType === 'json') {
-      try {
-        return JSON.parse(setting.value);
-      } catch {
-        return defaultValue;
-      }
-    }
-    return setting.value;
+    return parseSettingValue(setting, defaultValue);
   }
 
-  static async set(tenantId: string | null, module: string, key: string, value: SettingValue): Promise<void> {
+  static async set(
+    tenantId: string | undefined | null,
+    module: string,
+    key: string,
+    value: SettingValue,
+    options?: { environmentId?: string | null; scope?: SettingScope },
+  ): Promise<void> {
+    const scope = resolveScope(tenantId, options?.scope);
+    const environmentId = options?.environmentId ?? null;
     const dataType =
       typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : typeof value === 'object' ? 'json' : 'string';
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
 
-    await (prisma.setting.upsert as any)({
-      where: { tenantId_module_key: { tenantId, module, key } },
-      update: { value: typeof value === 'string' ? value : JSON.stringify(value), dataType },
-      create: { tenantId, module, key, value: typeof value === 'string' ? value : JSON.stringify(value), dataType },
+    const existing = await (prisma.setting.findFirst as any)({
+      where: {
+        tenantId: tenantId ?? null,
+        environmentId,
+        scope,
+        module,
+        key,
+      },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      await (prisma.setting.update as any)({
+        where: { id: existing.id },
+        data: { value: stringValue, dataType, updatedAt: new Date() },
+      });
+      return;
+    }
+
+    await (prisma.setting.create as any)({
+      data: {
+        tenantId: tenantId ?? null,
+        environmentId,
+        scope,
+        module,
+        key,
+        value: stringValue,
+        dataType,
+      },
     });
   }
 
-  static async delete(tenantId: string | null, module: string, key: string): Promise<void> {
-    await (prisma.setting.delete as any)({ where: { tenantId_module_key: { tenantId, module, key } } });
+  static async delete(
+    tenantId: string | undefined | null,
+    module: string,
+    key: string,
+    options?: { environmentId?: string | null; scope?: SettingScope },
+  ): Promise<void> {
+    const scope = resolveScope(tenantId, options?.scope);
+    const environmentId = options?.environmentId ?? null;
+    await (prisma.setting.deleteMany as any)({
+      where: {
+        tenantId: tenantId ?? null,
+        environmentId,
+        scope,
+        module,
+        key,
+      },
+    });
   }
 
-  static async list(tenantId: string | null, module: string) {
-    return (prisma.setting.findMany as any)({ where: { tenantId, module }, orderBy: { key: 'asc' } });
+  static async list(
+    tenantId: string | undefined | null,
+    module: string,
+    options?: { environmentId?: string | null; scope?: SettingScope },
+  ) {
+    const scope = resolveScope(tenantId, options?.scope);
+    const environmentId = options?.environmentId ?? null;
+    return (prisma.setting.findMany as any)({
+      where: {
+        tenantId: tenantId ?? null,
+        environmentId,
+        scope,
+        module,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
-  static async getAll(tenantId: string | null, module: string): Promise<Record<string, SettingValue>> {
-    const settings = await this.list(tenantId, module);
-    const out: Record<string, SettingValue> = {};
+  static async getAll(
+    tenantId: string | undefined | null,
+    module: string,
+    options?: { environmentId?: string | null; scope?: SettingScope },
+  ): Promise<Record<string, SettingValue>> {
+    const settings = await this.list(tenantId, module, options);
+    const result: Record<string, SettingValue> = {};
     for (const item of settings) {
-      out[item.key] = await this.get(tenantId, module, item.key);
+      result[item.key] = parseSettingValue(item, null);
     }
-    return out;
+    return result;
+  }
+
+  static async listModules(
+    tenantId: string | undefined | null,
+    options?: { environmentId?: string | null; scope?: SettingScope },
+  ): Promise<string[]> {
+    const scope = resolveScope(tenantId, options?.scope);
+    const environmentId = options?.environmentId ?? null;
+    const rows = await (prisma.setting.findMany as any)({
+      where: {
+        tenantId: tenantId ?? null,
+        environmentId,
+        scope,
+      },
+      select: { module: true },
+      distinct: ['module'],
+      orderBy: { module: 'asc' },
+    });
+
+    return rows.map((row: { module: string }) => row.module);
   }
 }
 `;
@@ -2569,17 +3103,35 @@ async function main() {
     create: { userId: user.id, roleId: adminRole.id },
   });
 
-  await prisma.setting.upsert({
-    where: { tenantId_module_key: { tenantId: tenant.id, module: 'notifications', key: 'emailEnabled' } },
-    update: { value: 'true', dataType: 'boolean' },
-    create: {
+  const existingNotificationSetting = await (prisma.setting.findFirst as any)({
+    where: {
       tenantId: tenant.id,
+      environmentId: null,
+      scope: 'tenant',
       module: 'notifications',
       key: 'emailEnabled',
-      value: 'true',
-      dataType: 'boolean',
     },
+    select: { id: true },
   });
+
+  if (existingNotificationSetting) {
+    await (prisma.setting.update as any)({
+      where: { id: existingNotificationSetting.id },
+      data: { value: 'true', dataType: 'boolean' },
+    });
+  } else {
+    await (prisma.setting.create as any)({
+      data: {
+        tenantId: tenant.id,
+        environmentId: null,
+        scope: 'tenant',
+        module: 'notifications',
+        key: 'emailEnabled',
+        value: 'true',
+        dataType: 'boolean',
+      },
+    });
+  }
 
   await runModuleSeeders({
     prisma,
@@ -2718,18 +3270,22 @@ model AuditLog {
 }
 
 model Setting {
-  id        String   @id @default(cuid())
-  tenantId  String?
-  module    String
-  key       String
-  value     String
-  dataType  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  tenantId      String?
+  environmentId String?
+  scope         String   @default("tenant")
+  module        String
+  key           String
+  value         String
+  dataType      String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
 
-  @@unique([tenantId, module, key])
+  @@unique([tenantId, environmentId, scope, module, key])
+  @@index([tenantId, scope, module])
 }
 
 model Permission {
@@ -3074,13 +3630,31 @@ export default function AppLayout() {
     applyStoredPortalTheme();
   }, []);
 
+  const iconByLabel: Record<string, string> = {
+    Dashboard: 'M3 13.5h8v7H3v-7zm10 0h8v7h-8v-7zM3 3.5h8v8H3v-8zm10 0h8v4h-8v-4z',
+    Users: 'M8 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm8 0a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM3 20a5 5 0 0 1 10 0H3zm10 0a4 4 0 0 1 8 0h-8z',
+    Roles: 'M12 3l8 4v5c0 5.5-3.6 8.5-8 9.8C7.6 20.5 4 17.5 4 12V7l8-4zm0 5a3 3 0 0 0-3 3c0 1.3.8 2.4 2 2.8V16h2v-2.2a3 3 0 0 0-1-5.8z',
+    Permissions: 'M4 4h16v5H4V4zm0 7.5h10v8H4v-8zm12 1h4v7h-4v-7z',
+    'Background Jobs': 'M12 6V3L8 7l4 4V8a4 4 0 1 1-4 4H6a6 6 0 1 0 6-6z',
+    'Audit Log': 'M6 3h9l5 5v13H6V3zm8 1.5V9h4.5M9 13h8M9 17h8',
+    Settings: 'M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.6-2-3.4-2.4 1a7.7 7.7 0 0 0-1.8-1L15 3h-6l-.4 3a7.7 7.7 0 0 0-1.8 1l-2.4-1-2 3.4L4.6 11a7.8 7.8 0 0 0 .1 2l-2.2 1.6 2 3.4 2.4-1a7.7 7.7 0 0 0 1.8 1L9 21h6l.4-3a7.7 7.7 0 0 0 1.8-1l2.4 1 2-3.4L19.4 13zM12 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z',
+    'Email Account': 'M3 6h18v12H3V6zm2 2v.4l7 4.2 7-4.2V8l-7 4.2L5 8z',
+    Theme: 'M12 3a9 9 0 1 0 9 9h-9V3z',
+    'Auth Server': 'M4 6h16v12H4V6zm2 2v8h12V8H6zm5 2h2v4h-2v-4z',
+    'API Docs': 'M6 4h12a2 2 0 0 1 2 2v14l-4-2-4 2-4-2-4 2V6a2 2 0 0 1 2-2z',
+  };
+
   return (
-    <div style={{ display: 'flex', height: '100vh', background: 'var(--hf-surface-alt)', color: 'var(--hf-foreground)' }}>
-      <aside style={{ width: 240, background: 'var(--hf-sidebar)', borderRight: '1px solid var(--hf-border)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ height: 56, display: 'flex', alignItems: 'center', padding: '0 1.25rem', borderBottom: '1px solid var(--hf-border)' }}>
-          <span style={{ fontWeight: 700, color: 'var(--hf-primary)' }}>HubForge Portal</span>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--hf-surface-alt)', color: 'var(--hf-foreground)' }}>
+      <aside style={{ width: 268, background: 'var(--hf-sidebar)', borderRight: '1px solid rgba(148, 163, 184, 0.2)', display: 'flex', flexDirection: 'column', color: '#d7e1f0', boxShadow: 'inset -1px 0 0 rgba(255, 255, 255, 0.04)' }}>
+        <div style={{ minHeight: 72, display: 'flex', alignItems: 'center', padding: '0 1.25rem', borderBottom: '1px solid rgba(148, 163, 184, 0.2)' }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 40%, #0ea5e9 100%)', boxShadow: '0 10px 22px rgba(14, 165, 233, 0.28)', marginRight: 10 }} />
+          <div>
+            <p style={{ margin: 0, fontWeight: 700, color: '#eff6ff', letterSpacing: '-0.02em' }}>HubForge</p>
+            <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#9fb0cb', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Portal Workspace</p>
+          </div>
         </div>
-        <nav style={{ padding: '0.75rem 0.5rem', flex: 1, overflowY: 'auto' }}>
+        <nav style={{ padding: '0.9rem 0.6rem', flex: 1, overflowY: 'auto' }}>
           {[
             {
               title: 'Operations',
@@ -3088,6 +3662,7 @@ export default function AppLayout() {
                 { href: '/dashboard', label: 'Dashboard' },
                 { href: '/users', label: 'Users' },
                 { href: '/roles', label: 'Roles' },
+                { href: '/permissions', label: 'Permissions' },
                 { href: '/jobs', label: 'Background Jobs' },
               ],
             },
@@ -3103,8 +3678,8 @@ export default function AppLayout() {
               ],
             },
           ].map((group) => (
-            <div key={group.title} style={{ marginBottom: '0.85rem' }}>
-              <p style={{ margin: '0 0 0.35rem', padding: '0 0.45rem', fontSize: '0.68rem', color: 'var(--hf-muted)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            <div key={group.title} style={{ marginBottom: '1rem' }}>
+              <p style={{ margin: '0 0 0.45rem', padding: '0 0.45rem', fontSize: '0.68rem', color: '#8fa2c0', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                 {group.title}
               </p>
               {group.items.map(({ href, label }) => (
@@ -3112,36 +3687,54 @@ export default function AppLayout() {
                   key={href}
                   to={href}
                   style={({ isActive }) => ({
-                    display: 'block',
-                    padding: '8px 12px',
-                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '9px 11px',
+                    borderRadius: 11,
                     fontSize: '0.875rem',
                     textDecoration: 'none',
-                    marginBottom: 4,
+                    marginBottom: 4.5,
                     color: isActive ? 'var(--hf-sidebar-active-text)' : 'var(--hf-sidebar-text)',
                     background: isActive ? 'var(--hf-sidebar-active)' : 'transparent',
+                    border: isActive ? '1px solid rgba(255, 255, 255, 0.24)' : '1px solid transparent',
+                    boxShadow: isActive ? '0 10px 24px rgba(15, 23, 42, 0.28)' : 'none',
+                    fontWeight: isActive ? 600 : 500,
                   })}
                 >
+                  <span style={{ display: 'inline-flex', width: 16, height: 16, opacity: 0.95 }}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+                      <path d={iconByLabel[label] ?? 'M4 4h16v16H4z'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
                   {label}
                 </NavLink>
               ))}
             </div>
           ))}
         </nav>
-        <div style={{ padding: '1rem', borderTop: '1px solid var(--hf-border)' }}>
+        <div style={{ padding: '1rem', borderTop: '1px solid rgba(148, 163, 184, 0.2)' }}>
           <button
             onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('tenantId'); window.location.href = '/login'; }}
-            style={{ width: '100%', padding: '6px', borderRadius: 6, background: 'transparent', border: '1px solid var(--hf-border)', color: 'var(--hf-muted)', cursor: 'pointer', fontSize: '0.8rem' }}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 10, background: 'rgba(15, 23, 42, 0.35)', border: '1px solid rgba(148, 163, 184, 0.24)', color: '#d6e0ee', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
           >
             Sign out
           </button>
         </div>
       </aside>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <header style={{ height: 56, background: 'var(--hf-header)', borderBottom: '1px solid var(--hf-border)', display: 'flex', alignItems: 'center', padding: '0 1.5rem' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Workspace</span>
+        <header style={{ minHeight: 72, background: 'var(--hf-header)', borderBottom: '1px solid var(--hf-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 1.65rem', backdropFilter: 'blur(8px)' }}>
+          <div>
+            <p style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--hf-muted)', fontWeight: 700 }}>Workspace</p>
+            <p style={{ margin: '2px 0 0', fontSize: '1.05rem', fontWeight: 700, letterSpacing: '-0.02em' }}>Control Center</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', height: 28, padding: '0 10px', borderRadius: 999, fontSize: '0.75rem', fontWeight: 700, color: 'var(--hf-primary)', background: 'var(--hf-primary-soft)', border: '1px solid color-mix(in srgb, var(--hf-primary) 20%, transparent 80%)' }}>
+              Live
+            </span>
+          </div>
         </header>
-        <main style={{ flex: 1, overflow: 'auto', padding: '1.5rem' }}>
+        <main style={{ flex: 1, overflow: 'auto', padding: '1.65rem' }}>
           <Outlet />
         </main>
       </div>
@@ -3333,34 +3926,71 @@ function portalDashboardRoute(): string {
 }
 
 function portalUsersRoute(): string {
-  return `import { useEffect, useState } from 'react';
+  return `import { useEffect, useMemo, useState } from 'react';
 
 const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
 
-type UserRecord = { id: string; email: string; name: string | null };
+type RoleRecord = { id: string; name: string };
+
+type UserRoleAssignment = {
+  id: string;
+  role: RoleRecord;
+};
+
+type UserRecord = {
+  id: string;
+  email: string;
+  name: string | null;
+  userRoles: UserRoleAssignment[];
+};
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
+  const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [search, setSearch] = useState('');
+  const [roleByUser, setRoleByUser] = useState<Record<string, string>>({});
+
+  function authHeaders(withJson = false): Record<string, string> {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    return {
+      ...(withJson ? { 'content-type': 'application/json' } : {}),
+      authorization: 'Bearer ' + token,
+      'x-tenant-id': tenantId,
+    };
+  }
 
   async function load() {
-    const token = localStorage.getItem('token') ?? '';
-    const res = await fetch(API + '/v1/users', { headers: { authorization: 'Bearer ' + token } });
-    if (!res.ok) return;
-    const data = (await res.json()) as UserRecord[];
-    setUsers(data);
+    const [usersRes, rolesRes] = await Promise.all([
+      fetch(API + '/v1/users', { headers: authHeaders() }),
+      fetch(API + '/v1/roles', { headers: authHeaders() }),
+    ]);
+    if (!usersRes.ok || !rolesRes.ok) return;
+    const usersData = (await usersRes.json()) as UserRecord[];
+    const rolesData = (await rolesRes.json()) as RoleRecord[];
+    setUsers(usersData);
+    setRoles(rolesData);
   }
 
   useEffect(() => {
     void load();
   }, []);
 
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((u) => {
+      const roleText = u.userRoles.map((r) => r.role.name.toLowerCase()).join(' ');
+      return (u.email + ' ' + (u.name ?? '') + ' ' + roleText).toLowerCase().includes(q);
+    });
+  }, [search, users]);
+
   async function createUser() {
-    const token = localStorage.getItem('token') ?? '';
     const res = await fetch(API + '/v1/users', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+      headers: authHeaders(true),
       body: JSON.stringify({ email, name }),
     });
     if (res.ok) {
@@ -3370,26 +4000,430 @@ export default function UsersPage() {
     }
   }
 
+  async function saveUser(user: UserRecord) {
+    const res = await fetch(API + '/v1/users/' + user.id, {
+      method: 'PUT',
+      headers: authHeaders(true),
+      body: JSON.stringify({ email: user.email, name: user.name }),
+    });
+    if (res.ok) {
+      await load();
+    }
+  }
+
+  async function deleteUser(userId: string) {
+    const res = await fetch(API + '/v1/users/' + userId, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (res.ok) {
+      await load();
+    }
+  }
+
+  async function assignRole(userId: string) {
+    const roleId = roleByUser[userId];
+    if (!roleId) return;
+    const res = await fetch(API + '/v1/user-roles', {
+      method: 'POST',
+      headers: authHeaders(true),
+      body: JSON.stringify({ userId, roleId }),
+    });
+    if (res.ok) {
+      setRoleByUser((prev) => ({ ...prev, [userId]: '' }));
+      await load();
+    }
+  }
+
+  async function removeRole(assignmentId: string) {
+    const res = await fetch(API + '/v1/user-roles/' + assignmentId, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (res.ok) {
+      await load();
+    }
+  }
+
   return (
     <div>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Users</h2>
-      <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: '2fr 2fr auto', marginBottom: '1rem', maxWidth: 760 }}>
-        <input value={email} onChange={(e) => setEmail(e.currentTarget.value)} placeholder="Email" style={inputStyle} />
-        <input value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Name" style={inputStyle} />
-        <button onClick={createUser} style={buttonStyle}>Add User</button>
+      <div style={{ marginBottom: '1rem' }}>
+        <div style={{ fontSize: '0.76rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--hf-muted)', marginBottom: 8 }}>Access control</div>
+        <h2 style={{ fontSize: '1.9rem', fontWeight: 800, margin: '0 0 0.5rem', color: 'var(--hf-foreground)', letterSpacing: '-0.04em' }}>Users</h2>
+        <p style={{ margin: 0, color: 'var(--hf-muted)' }}>Create, edit, remove users, and manage role assignments.</p>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
-        {users.map((u) => (
-          <div key={u.id} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #f1f5f9' }}>
-            <p style={{ margin: 0, fontWeight: 600 }}>{u.name ?? '(no name)'}</p>
-            <p style={{ margin: '0.15rem 0 0', color: '#64748b', fontSize: '0.88rem' }}>{u.email}</p>
-          </div>
-        ))}
-        {users.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No users yet.</p>}
+
+      <div style={{ background: 'var(--hf-surface)', border: '1px solid var(--hf-border)', borderRadius: 22, padding: '1rem', boxShadow: 'var(--hf-card-shadow)', marginBottom: '1rem' }}>
+        <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: '2fr 2fr auto', marginBottom: '0.75rem', maxWidth: 880 }}>
+          <input value={email} onChange={(e) => setEmail(e.currentTarget.value)} placeholder="Email" style={inputStyle} />
+          <input value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Name" style={inputStyle} />
+          <button onClick={createUser} style={buttonStyle}>Add User</button>
+        </div>
+
+        <input value={search} onChange={(e) => setSearch(e.currentTarget.value)} placeholder="Search users by name, email, role..." style={{ ...inputStyle, width: '100%', maxWidth: 880 }} />
+      </div>
+
+      <div style={{ display: 'grid', gap: '0.9rem' }}>
+        {filteredUsers.map((u) => {
+          const assignedRoleIds = new Set(u.userRoles.map((x) => x.role.id));
+          const assignableRoles = roles.filter((r) => !assignedRoleIds.has(r.id));
+          return (
+            <div key={u.id} style={cardStyle}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr auto auto', gap: 10, marginBottom: '0.9rem' }}>
+                <input
+                  value={u.email}
+                  onChange={(e) => {
+                    const next = e.currentTarget.value;
+                    setUsers((prev) => prev.map((item) => (item.id === u.id ? { ...item, email: next } : item)));
+                  }}
+                  placeholder="Email"
+                  style={inputStyle}
+                />
+                <input
+                  value={u.name ?? ''}
+                  onChange={(e) => {
+                    const next = e.currentTarget.value;
+                    setUsers((prev) => prev.map((item) => (item.id === u.id ? { ...item, name: next } : item)));
+                  }}
+                  placeholder="Name"
+                  style={inputStyle}
+                />
+                <button onClick={() => void saveUser(u)} style={secondaryButtonStyle}>Save</button>
+                <button onClick={() => void deleteUser(u.id)} style={dangerButtonStyle}>Delete</button>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: '0.9rem' }}>
+                {u.userRoles.map((assignment) => (
+                  <span key={assignment.id} style={chipStyle}>
+                    {assignment.role.name}
+                    <button onClick={() => void removeRole(assignment.id)} style={chipRemoveStyle}>x</button>
+                  </span>
+                ))}
+                {u.userRoles.length === 0 && <span style={{ color: 'var(--hf-muted)', fontSize: '0.88rem' }}>No roles assigned</span>}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, maxWidth: 460 }}>
+                <select
+                  value={roleByUser[u.id] ?? ''}
+                  onChange={(e) => setRoleByUser((prev) => ({ ...prev, [u.id]: e.currentTarget.value }))}
+                  style={{ ...inputStyle, flex: 1 }}
+                >
+                  <option value="">Select role to assign</option>
+                  {assignableRoles.map((role) => (
+                    <option key={role.id} value={role.id}>{role.name}</option>
+                  ))}
+                </select>
+                <button onClick={() => void assignRole(u.id)} style={buttonStyle}>Assign Role</button>
+              </div>
+            </div>
+          );
+        })}
+
+        {filteredUsers.length === 0 && <p style={{ margin: 0, padding: '1rem', color: 'var(--hf-muted)' }}>No users found.</p>}
       </div>
     </div>
   );
 }
+
+const cardStyle = {
+  background: 'var(--hf-surface)',
+  border: '1px solid var(--hf-border)',
+  borderRadius: 22,
+  padding: '1rem',
+  boxShadow: 'var(--hf-card-shadow)',
+};
+
+const chipStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  borderRadius: 999,
+  background: 'var(--hf-primary-soft)',
+  color: 'var(--hf-primary)',
+  padding: '5px 12px',
+  fontSize: '0.82rem',
+  fontWeight: 700,
+  border: '1px solid color-mix(in srgb, var(--hf-primary) 16%, white 84%)',
+};
+
+const chipRemoveStyle = {
+  border: 'none',
+  background: 'transparent',
+  color: 'inherit',
+  fontSize: '1rem',
+  lineHeight: 1,
+  cursor: 'pointer',
+  padding: 0,
+};
+
+const inputStyle = {
+  border: '1px solid var(--hf-border)',
+  borderRadius: 14,
+  padding: '11px 13px',
+  background: 'rgba(255,255,255,0.88)',
+};
+
+const buttonStyle = {
+  border: '1px solid transparent',
+  borderRadius: 14,
+  padding: '11px 14px',
+  background: 'var(--hf-primary)',
+  color: '#fff',
+  cursor: 'pointer',
+  fontWeight: 700,
+  boxShadow: '0 10px 22px color-mix(in srgb, var(--hf-primary) 28%, transparent 72%)',
+};
+
+const secondaryButtonStyle = {
+  border: '1px solid var(--hf-border)',
+  borderRadius: 14,
+  padding: '11px 14px',
+  background: 'rgba(255,255,255,0.82)',
+  color: 'var(--hf-foreground)',
+  cursor: 'pointer',
+  fontWeight: 700,
+};
+
+const dangerButtonStyle = {
+  border: '1px solid transparent',
+  borderRadius: 14,
+  padding: '11px 14px',
+  background: '#dc2626',
+  color: '#fff',
+  cursor: 'pointer',
+  fontWeight: 700,
+  boxShadow: '0 10px 22px rgba(220, 38, 38, 0.18)',
+};
+`;
+}
+
+function portalRolesRoute(): string {
+  return `import { useEffect, useMemo, useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type PermissionRecord = {
+  id: string;
+  module: string;
+  action: string;
+  description: string | null;
+};
+
+type RolePermissionAssignment = {
+  id: string;
+  permission: PermissionRecord;
+};
+
+type RoleRecord = {
+  id: string;
+  name: string;
+  description: string | null;
+  permissions: RolePermissionAssignment[];
+};
+
+export default function RolesPage() {
+  const [roles, setRoles] = useState<RoleRecord[]>([]);
+  const [permissions, setPermissions] = useState<PermissionRecord[]>([]);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [search, setSearch] = useState('');
+  const [permissionByRole, setPermissionByRole] = useState<Record<string, string>>({});
+
+  function authHeaders(withJson = false): Record<string, string> {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    return {
+      ...(withJson ? { 'content-type': 'application/json' } : {}),
+      authorization: 'Bearer ' + token,
+      'x-tenant-id': tenantId,
+    };
+  }
+
+  async function load() {
+    const [rolesRes, permsRes] = await Promise.all([
+      fetch(API + '/v1/roles', { headers: authHeaders() }),
+      fetch(API + '/v1/permissions', { headers: authHeaders() }),
+    ]);
+    if (!rolesRes.ok || !permsRes.ok) return;
+    const rolesData = (await rolesRes.json()) as RoleRecord[];
+    const permsData = (await permsRes.json()) as PermissionRecord[];
+    setRoles(rolesData);
+    setPermissions(permsData);
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const filteredRoles = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return roles;
+    return roles.filter((r) => {
+      const permText = r.permissions.map((p) => p.permission.module + '.' + p.permission.action).join(' ');
+      return (r.name + ' ' + (r.description ?? '') + ' ' + permText).toLowerCase().includes(q);
+    });
+  }, [roles, search]);
+
+  async function createRole() {
+    const res = await fetch(API + '/v1/roles', {
+      method: 'POST',
+      headers: authHeaders(true),
+      body: JSON.stringify({ name, description }),
+    });
+    if (res.ok) {
+      setName('');
+      setDescription('');
+      await load();
+    }
+  }
+
+  async function saveRole(role: RoleRecord) {
+    const res = await fetch(API + '/v1/roles/' + role.id, {
+      method: 'PUT',
+      headers: authHeaders(true),
+      body: JSON.stringify({ name: role.name, description: role.description }),
+    });
+    if (res.ok) {
+      await load();
+    }
+  }
+
+  async function deleteRole(roleId: string) {
+    const res = await fetch(API + '/v1/roles/' + roleId, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (res.ok) {
+      await load();
+    }
+  }
+
+  async function assignPermission(roleId: string) {
+    const permissionId = permissionByRole[roleId];
+    if (!permissionId) return;
+    const res = await fetch(API + '/v1/role-permissions', {
+      method: 'POST',
+      headers: authHeaders(true),
+      body: JSON.stringify({ roleId, permissionId }),
+    });
+    if (res.ok) {
+      setPermissionByRole((prev) => ({ ...prev, [roleId]: '' }));
+      await load();
+    }
+  }
+
+  async function removePermission(assignmentId: string) {
+    const res = await fetch(API + '/v1/role-permissions/' + assignmentId, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (res.ok) {
+      await load();
+    }
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Roles</h2>
+      <p style={{ margin: '0 0 0.9rem', color: '#64748b' }}>Manage tenant roles and assign permissions.</p>
+
+      <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: '2fr 3fr auto', marginBottom: '0.75rem', maxWidth: 900 }}>
+        <input value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Role name" style={inputStyle} />
+        <input value={description} onChange={(e) => setDescription(e.currentTarget.value)} placeholder="Description" style={inputStyle} />
+        <button onClick={createRole} style={buttonStyle}>Add Role</button>
+      </div>
+
+      <input value={search} onChange={(e) => setSearch(e.currentTarget.value)} placeholder="Search roles by name, description, permission..." style={{ ...inputStyle, width: '100%', maxWidth: 900, marginBottom: '1rem' }} />
+
+      <div style={{ display: 'grid', gap: '0.75rem' }}>
+        {filteredRoles.map((role) => {
+          const assignedPermissionIds = new Set(role.permissions.map((p) => p.permission.id));
+          const assignablePermissions = permissions.filter((p) => !assignedPermissionIds.has(p.id));
+
+          return (
+            <div key={role.id} style={cardStyle}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr auto auto', gap: 8, marginBottom: '0.7rem' }}>
+                <input
+                  value={role.name}
+                  onChange={(e) => {
+                    const next = e.currentTarget.value;
+                    setRoles((prev) => prev.map((item) => (item.id === role.id ? { ...item, name: next } : item)));
+                  }}
+                  placeholder="Role name"
+                  style={inputStyle}
+                />
+                <input
+                  value={role.description ?? ''}
+                  onChange={(e) => {
+                    const next = e.currentTarget.value;
+                    setRoles((prev) => prev.map((item) => (item.id === role.id ? { ...item, description: next } : item)));
+                  }}
+                  placeholder="Description"
+                  style={inputStyle}
+                />
+                <button onClick={() => void saveRole(role)} style={secondaryButtonStyle}>Save</button>
+                <button onClick={() => void deleteRole(role.id)} style={dangerButtonStyle}>Delete</button>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: '0.65rem' }}>
+                {role.permissions.map((assignment) => (
+                  <span key={assignment.id} style={chipStyle}>
+                    {assignment.permission.module}.{assignment.permission.action}
+                    <button onClick={() => void removePermission(assignment.id)} style={chipRemoveStyle}>x</button>
+                  </span>
+                ))}
+                {role.permissions.length === 0 && <span style={{ color: '#64748b', fontSize: '0.85rem' }}>No permissions assigned</span>}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, maxWidth: 520 }}>
+                <select
+                  value={permissionByRole[role.id] ?? ''}
+                  onChange={(e) => setPermissionByRole((prev) => ({ ...prev, [role.id]: e.currentTarget.value }))}
+                  style={{ ...inputStyle, flex: 1 }}
+                >
+                  <option value="">Select permission to assign</option>
+                  {assignablePermissions.map((p) => (
+                    <option key={p.id} value={p.id}>{p.module}.{p.action}</option>
+                  ))}
+                </select>
+                <button onClick={() => void assignPermission(role.id)} style={buttonStyle}>Assign Permission</button>
+              </div>
+            </div>
+          );
+        })}
+
+        {filteredRoles.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No roles found.</p>}
+      </div>
+    </div>
+  );
+}
+
+const cardStyle = {
+  background: '#fff',
+  border: '1px solid #e5e7eb',
+  borderRadius: 12,
+  padding: '0.8rem',
+};
+
+const chipStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  borderRadius: 999,
+  background: '#ecfdf5',
+  color: '#065f46',
+  padding: '3px 10px',
+  fontSize: '0.82rem',
+};
+
+const chipRemoveStyle = {
+  border: 'none',
+  background: 'transparent',
+  color: '#065f46',
+  fontSize: '1rem',
+  lineHeight: 1,
+  cursor: 'pointer',
+};
 
 const inputStyle = {
   border: '1px solid #d1d5db',
@@ -3405,71 +4439,168 @@ const buttonStyle = {
   color: '#fff',
   cursor: 'pointer',
 };
+
+const secondaryButtonStyle = {
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#fff',
+  color: '#1f2937',
+  cursor: 'pointer',
+};
+
+const dangerButtonStyle = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#dc2626',
+  color: '#fff',
+  cursor: 'pointer',
+};
 `;
 }
 
-function portalRolesRoute(): string {
-  return `import { useEffect, useState } from 'react';
+function portalPermissionsRoute(): string {
+  return `import { useEffect, useMemo, useState } from 'react';
 
 const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
 
-type RoleRecord = { id: string; name: string; description: string | null };
+type PermissionRecord = {
+  id: string;
+  module: string;
+  action: string;
+  description: string | null;
+};
 
-export default function RolesPage() {
-  const [roles, setRoles] = useState<RoleRecord[]>([]);
-  const [name, setName] = useState('');
+export default function PermissionsPage() {
+  const [permissions, setPermissions] = useState<PermissionRecord[]>([]);
+  const [moduleName, setModuleName] = useState('');
+  const [action, setAction] = useState('');
   const [description, setDescription] = useState('');
+  const [search, setSearch] = useState('');
+
+  function authHeaders(withJson = false): Record<string, string> {
+    const token = localStorage.getItem('token') ?? '';
+    return {
+      ...(withJson ? { 'content-type': 'application/json' } : {}),
+      authorization: 'Bearer ' + token,
+    };
+  }
 
   async function load() {
-    const token = localStorage.getItem('token') ?? '';
-    const tenantId = localStorage.getItem('tenantId') ?? '';
-    const res = await fetch(API + '/v1/roles', {
-      headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
-    });
+    const res = await fetch(API + '/v1/permissions', { headers: authHeaders() });
     if (!res.ok) return;
-    const data = (await res.json()) as RoleRecord[];
-    setRoles(data);
+    const data = (await res.json()) as PermissionRecord[];
+    setPermissions(data);
   }
 
   useEffect(() => {
     void load();
   }, []);
 
-  async function createRole() {
-    const token = localStorage.getItem('token') ?? '';
-    const tenantId = localStorage.getItem('tenantId') ?? '';
-    const res = await fetch(API + '/v1/roles', {
+  const filteredPermissions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return permissions;
+    return permissions.filter((p) => {
+      return (p.module + ' ' + p.action + ' ' + (p.description ?? '')).toLowerCase().includes(q);
+    });
+  }, [search, permissions]);
+
+  async function createPermission() {
+    const res = await fetch(API + '/v1/permissions', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
-      body: JSON.stringify({ name, description }),
+      headers: authHeaders(true),
+      body: JSON.stringify({ module: moduleName, action, description }),
     });
     if (res.ok) {
-      setName('');
+      setModuleName('');
+      setAction('');
       setDescription('');
+      await load();
+    }
+  }
+
+  async function savePermission(item: PermissionRecord) {
+    const res = await fetch(API + '/v1/permissions/' + item.id, {
+      method: 'PUT',
+      headers: authHeaders(true),
+      body: JSON.stringify({ module: item.module, action: item.action, description: item.description }),
+    });
+    if (res.ok) {
+      await load();
+    }
+  }
+
+  async function deletePermission(id: string) {
+    const res = await fetch(API + '/v1/permissions/' + id, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (res.ok) {
       await load();
     }
   }
 
   return (
     <div>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Roles</h2>
-      <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: '2fr 3fr auto', marginBottom: '1rem', maxWidth: 900 }}>
-        <input value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Role name" style={inputStyle} />
-        <input value={description} onChange={(e) => setDescription(e.currentTarget.value)} placeholder="Description" style={inputStyle} />
-        <button onClick={createRole} style={buttonStyle}>Add Role</button>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Permissions</h2>
+      <p style={{ margin: '0 0 0.9rem', color: '#64748b' }}>Create and maintain module permission keys used by RBAC.</p>
+
+      <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1.2fr 1fr 2fr auto', marginBottom: '0.75rem' }}>
+        <input value={moduleName} onChange={(e) => setModuleName(e.currentTarget.value)} placeholder="module (e.g. billing)" style={inputStyle} />
+        <input value={action} onChange={(e) => setAction(e.currentTarget.value)} placeholder="action (e.g. manage)" style={inputStyle} />
+        <input value={description} onChange={(e) => setDescription(e.currentTarget.value)} placeholder="description" style={inputStyle} />
+        <button onClick={createPermission} style={buttonStyle}>Add</button>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
-        {roles.map((r) => (
-          <div key={r.id} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #f1f5f9' }}>
-            <p style={{ margin: 0, fontWeight: 600 }}>{r.name}</p>
-            <p style={{ margin: '0.15rem 0 0', color: '#64748b', fontSize: '0.88rem' }}>{r.description ?? 'No description'}</p>
+
+      <input value={search} onChange={(e) => setSearch(e.currentTarget.value)} placeholder="Search permissions..." style={{ ...inputStyle, width: '100%', marginBottom: '1rem' }} />
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        {filteredPermissions.map((item) => (
+          <div key={item.id} style={cardStyle}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 2fr auto auto', gap: 8 }}>
+              <input
+                value={item.module}
+                onChange={(e) => {
+                  const next = e.currentTarget.value;
+                  setPermissions((prev) => prev.map((p) => (p.id === item.id ? { ...p, module: next } : p)));
+                }}
+                style={inputStyle}
+              />
+              <input
+                value={item.action}
+                onChange={(e) => {
+                  const next = e.currentTarget.value;
+                  setPermissions((prev) => prev.map((p) => (p.id === item.id ? { ...p, action: next } : p)));
+                }}
+                style={inputStyle}
+              />
+              <input
+                value={item.description ?? ''}
+                onChange={(e) => {
+                  const next = e.currentTarget.value;
+                  setPermissions((prev) => prev.map((p) => (p.id === item.id ? { ...p, description: next } : p)));
+                }}
+                style={inputStyle}
+              />
+              <button onClick={() => void savePermission(item)} style={secondaryButtonStyle}>Save</button>
+              <button onClick={() => void deletePermission(item.id)} style={dangerButtonStyle}>Delete</button>
+            </div>
           </div>
         ))}
-        {roles.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No roles yet.</p>}
+
+        {filteredPermissions.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No permissions found.</p>}
       </div>
     </div>
   );
 }
+
+const cardStyle = {
+  background: '#fff',
+  border: '1px solid #e5e7eb',
+  borderRadius: 12,
+  padding: '0.75rem',
+};
 
 const inputStyle = {
   border: '1px solid #d1d5db',
@@ -3482,6 +4613,24 @@ const buttonStyle = {
   borderRadius: 8,
   padding: '8px 12px',
   background: '#2563eb',
+  color: '#fff',
+  cursor: 'pointer',
+};
+
+const secondaryButtonStyle = {
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#fff',
+  color: '#1f2937',
+  cursor: 'pointer',
+};
+
+const dangerButtonStyle = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#dc2626',
   color: '#fff',
   cursor: 'pointer',
 };
@@ -3678,46 +4827,61 @@ export type ThemePreset = 'ynex-light' | 'slate' | 'forest';
 
 const PRESETS: Record<ThemePreset, Record<string, string>> = {
   'ynex-light': {
-    '--hf-primary': '#845adf',
-    '--hf-primary-hover': '#7045ce',
-    '--hf-surface': '#ffffff',
-    '--hf-surface-alt': '#f0f1f7',
-    '--hf-foreground': '#2a2f3e',
-    '--hf-muted': '#8c9097',
-    '--hf-border': '#e9edf4',
-    '--hf-sidebar': '#ffffff',
-    '--hf-sidebar-text': '#536485',
-    '--hf-sidebar-active': '#f0ebfc',
-    '--hf-sidebar-active-text': '#845adf',
-    '--hf-header': '#ffffff',
-  },
-  slate: {
     '--hf-primary': '#2563eb',
     '--hf-primary-hover': '#1d4ed8',
-    '--hf-surface': '#0f172a',
+    '--hf-primary-soft': 'rgba(37, 99, 235, 0.12)',
+    '--hf-surface': 'rgba(255, 255, 255, 0.92)',
+    '--hf-surface-alt': '#f4f7fb',
+    '--hf-surface-muted': '#eef3f8',
+    '--hf-foreground': '#172033',
+    '--hf-muted': '#617089',
+    '--hf-border': 'rgba(148, 163, 184, 0.22)',
+    '--hf-border-strong': 'rgba(100, 116, 139, 0.32)',
+    '--hf-sidebar': 'linear-gradient(180deg, #0f172a 0%, #111c34 100%)',
+    '--hf-sidebar-text': '#afbdd4',
+    '--hf-sidebar-active': 'rgba(255, 255, 255, 0.08)',
+    '--hf-sidebar-active-text': '#f8fbff',
+    '--hf-header': 'rgba(255, 255, 255, 0.82)',
+    '--hf-card-shadow': '0 18px 40px rgba(15, 23, 42, 0.08)',
+    '--hf-card-shadow-soft': '0 8px 24px rgba(15, 23, 42, 0.05)',
+  },
+  slate: {
+    '--hf-primary': '#60a5fa',
+    '--hf-primary-hover': '#3b82f6',
+    '--hf-primary-soft': 'rgba(96, 165, 250, 0.12)',
+    '--hf-surface': 'rgba(15, 23, 42, 0.88)',
     '--hf-surface-alt': '#020617',
+    '--hf-surface-muted': '#0f172a',
     '--hf-foreground': '#e2e8f0',
     '--hf-muted': '#94a3b8',
-    '--hf-border': '#1e293b',
-    '--hf-sidebar': '#0b1220',
+    '--hf-border': 'rgba(71, 85, 105, 0.44)',
+    '--hf-border-strong': 'rgba(100, 116, 139, 0.55)',
+    '--hf-sidebar': 'linear-gradient(180deg, #020617 0%, #0f172a 100%)',
     '--hf-sidebar-text': '#93a2b8',
-    '--hf-sidebar-active': '#1e293b',
-    '--hf-sidebar-active-text': '#93c5fd',
-    '--hf-header': '#0b1220',
+    '--hf-sidebar-active': 'rgba(148, 163, 184, 0.12)',
+    '--hf-sidebar-active-text': '#eff6ff',
+    '--hf-header': 'rgba(2, 6, 23, 0.72)',
+    '--hf-card-shadow': '0 18px 40px rgba(2, 6, 23, 0.36)',
+    '--hf-card-shadow-soft': '0 8px 24px rgba(2, 6, 23, 0.24)',
   },
   forest: {
-    '--hf-primary': '#15803d',
-    '--hf-primary-hover': '#166534',
-    '--hf-surface': '#ffffff',
-    '--hf-surface-alt': '#ecfdf5',
-    '--hf-foreground': '#14532d',
-    '--hf-muted': '#3f7a57',
-    '--hf-border': '#bbf7d0',
-    '--hf-sidebar': '#f0fdf4',
-    '--hf-sidebar-text': '#166534',
-    '--hf-sidebar-active': '#dcfce7',
-    '--hf-sidebar-active-text': '#14532d',
-    '--hf-header': '#f0fdf4',
+    '--hf-primary': '#0f9f6e',
+    '--hf-primary-hover': '#0b7d57',
+    '--hf-primary-soft': 'rgba(15, 159, 110, 0.12)',
+    '--hf-surface': 'rgba(255, 255, 255, 0.92)',
+    '--hf-surface-alt': '#edf8f2',
+    '--hf-surface-muted': '#e0f2e8',
+    '--hf-foreground': '#183126',
+    '--hf-muted': '#537463',
+    '--hf-border': 'rgba(110, 145, 124, 0.24)',
+    '--hf-border-strong': 'rgba(80, 113, 94, 0.35)',
+    '--hf-sidebar': 'linear-gradient(180deg, #0d1f17 0%, #153328 100%)',
+    '--hf-sidebar-text': '#b3d1bf',
+    '--hf-sidebar-active': 'rgba(255, 255, 255, 0.08)',
+    '--hf-sidebar-active-text': '#f5fff8',
+    '--hf-header': 'rgba(255, 255, 255, 0.78)',
+    '--hf-card-shadow': '0 18px 40px rgba(13, 31, 23, 0.10)',
+    '--hf-card-shadow-soft': '0 8px 24px rgba(13, 31, 23, 0.06)',
   },
 };
 

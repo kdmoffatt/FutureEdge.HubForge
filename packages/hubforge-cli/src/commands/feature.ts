@@ -884,10 +884,35 @@ function tenantModuleSeedScript(slug: string, title: string): string {
     return;
   }
 
-  await prisma.setting.upsert({
-    where: { tenantId_module_key: { tenantId: tenantIds[0], module: '${slug}', key: 'enabled' } },
-    update: { value: 'true', dataType: 'boolean' },
-    create: { tenantId: tenantIds[0], module: '${slug}', key: 'enabled', value: 'true', dataType: 'boolean' },
+  const existing = await (prisma.setting.findFirst as any)({
+    where: {
+      tenantId: tenantIds[0],
+      environmentId: null,
+      scope: 'tenant',
+      module: '${slug}',
+      key: 'enabled',
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    await (prisma.setting.update as any)({
+      where: { id: existing.id },
+      data: { value: 'true', dataType: 'boolean' },
+    });
+    return;
+  }
+
+  await (prisma.setting.create as any)({
+    data: {
+      tenantId: tenantIds[0],
+      environmentId: null,
+      scope: 'tenant',
+      module: '${slug}',
+      key: 'enabled',
+      value: 'true',
+      dataType: 'boolean',
+    },
   });
 }
 `;
