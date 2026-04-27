@@ -36,7 +36,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'email-account-settings.ts'), apiEmailAccountSettingsRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'settings.ts'), apiSettingsRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'rbac.ts'), apiRbacRouteTs());
-  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'jobs.ts'), apiJobsRouteTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'background-jobs.ts'), apiJobsRouteTs());
   if (options.authServer) {
     await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'auth-server-settings.ts'), apiAuthServerSettingsRouteTs());
   }
@@ -128,6 +128,11 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'packages', 'hubforge-plugin-sdk', 'tsconfig.json'), packageTsConfig());
   await writeTextFile(path.join(targetDir, 'packages', 'hubforge-plugin-sdk', 'src', 'index.ts'), hubforgePluginSdkIndexTs());
 
+  // packages/jobs
+  await writeTextFile(path.join(targetDir, 'packages', 'jobs', 'package.json'), jobsPackageJson());
+  await writeTextFile(path.join(targetDir, 'packages', 'jobs', 'tsconfig.json'), packageTsConfig());
+  await writeTextFile(path.join(targetDir, 'packages', 'jobs', 'src', 'worker.ts'), jobsWorkerTs());
+
   // packages/db
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'package.json'), dbPackageJson());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'tsconfig.json'), packageTsConfig());
@@ -162,6 +167,7 @@ function rootPackageJson(projectName: string): string {
       dev: 'pnpm --filter @hubforge/api dev',
       'dev:all': 'pnpm turbo dev',
       'dev:api': 'pnpm --filter @hubforge/api dev',
+      'dev:jobs': 'pnpm --filter @hubforge/jobs dev',
       'dev:ui': 'pnpm --filter @hubforge/ui-app dev',
       'dev:portal': 'pnpm --filter @hubforge/portal dev',
       'db:bootstrap': 'pnpm --filter @hubforge/db db:bootstrap',
@@ -681,7 +687,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerEmailAccountSettingsRoutes } from './routes/email-account-settings.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerUsersRoutes, registerRolesRoutes, registerPermissionsRoutes } from './routes/rbac.js';
-import { registerJobRoutes } from './routes/jobs.js';
+import { registerJobRoutes } from './routes/background-jobs.js';
 import { PermissionRegistry } from '@hubforge/db';
 ${authServerImport}
 
@@ -1993,17 +1999,34 @@ export function registerJobRoutes(app: Hono): void {
     return c.json(jobs);
   });
 
+  app.get('/v1/jobs/:jobId', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const jobId = c.req.param('jobId');
+    if (!jobId) return c.json({ error: 'jobId is required' }, 400);
+
+    const job = await JobService.getById(jobId, tenantId ?? null);
+    if (!job) return c.json({ error: 'Job not found' }, 404);
+    return c.json(job);
+  });
+
   app.post('/v1/jobs/:jobType/trigger', requireAuth, async (c) => {
     const tenantId = c.req.header('x-tenant-id');
     const jobType = c.req.param('jobType');
     if (!jobType) return c.json({ error: 'jobType is required' }, 400);
 
-    const body = (await c.req.json().catch(() => ({}))) as { payload?: unknown; priority?: unknown };
+    const body = (await c.req.json().catch(() => ({}))) as {
+      payload?: unknown;
+      priority?: unknown;
+      scheduledFor?: unknown;
+      maxAttempts?: unknown;
+    };
     const created = await JobService.enqueue({
       tenantId: tenantId ?? null,
       jobType,
       payload: body.payload,
       priority: typeof body.priority === 'number' ? body.priority : 0,
+      scheduledFor: typeof body.scheduledFor === 'string' ? new Date(body.scheduledFor) : null,
+      maxAttempts: typeof body.maxAttempts === 'number' ? body.maxAttempts : 3,
       createdBy: null,
     });
     return c.json(created, 201);
@@ -2015,6 +2038,77 @@ export function registerJobRoutes(app: Hono): void {
 
     const job = await JobService.retry(jobId);
     return c.json(job);
+  });
+
+  app.post('/v1/jobs/:jobId/cancel', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const jobId = c.req.param('jobId');
+    if (!jobId) return c.json({ error: 'jobId is required' }, 400);
+
+    const result = await JobService.cancel(jobId, tenantId ?? null);
+    return c.json({ cancelled: result.count > 0 });
+  });
+
+  app.get('/v1/jobs/schedules/list', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const schedules = await JobService.listSchedules(tenantId);
+    return c.json(schedules);
+  });
+
+  app.post('/v1/jobs/schedules', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const name = body['name'];
+    const jobType = body['jobType'];
+    const cron = body['cron'];
+    if (typeof name !== 'string' || typeof jobType !== 'string' || typeof cron !== 'string') {
+      return c.json({ error: 'name, jobType, and cron are required' }, 400);
+    }
+
+    const schedule = await JobService.createSchedule({
+      tenantId,
+      name,
+      jobType,
+      cron,
+      timezone: typeof body['timezone'] === 'string' ? body['timezone'] : 'UTC',
+      payload: body['payload'],
+      isActive: typeof body['isActive'] === 'boolean' ? body['isActive'] : true,
+      nextRunAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+
+    return c.json(schedule, 201);
+  });
+
+  app.put('/v1/jobs/schedules/:id', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const id = c.req.param('id');
+    if (!id) return c.json({ error: 'id is required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const result = await JobService.updateSchedule(id, tenantId, {
+      ...(typeof body['name'] === 'string' ? { name: body['name'] } : {}),
+      ...(typeof body['cron'] === 'string' ? { cron: body['cron'] } : {}),
+      ...(typeof body['timezone'] === 'string' ? { timezone: body['timezone'] } : {}),
+      ...(typeof body['isActive'] === 'boolean' ? { isActive: body['isActive'] } : {}),
+      ...(body['payload'] !== undefined ? { payload: body['payload'] } : {}),
+    });
+
+    return c.json({ updated: result.count > 0 });
+  });
+
+  app.delete('/v1/jobs/schedules/:id', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const id = c.req.param('id');
+    if (!id) return c.json({ error: 'id is required' }, 400);
+
+    const result = await JobService.deleteSchedule(id, tenantId);
+    return c.json({ deleted: result.count > 0 });
   });
 }
 `;
@@ -2607,6 +2701,144 @@ function dbPackageJson(): string {
   return `${JSON.stringify(pkg, null, 2)}\n`;
 }
 
+function jobsPackageJson(): string {
+  const pkg = {
+    name: '@hubforge/jobs',
+    version: '0.1.0',
+    private: true,
+    type: 'module',
+    scripts: {
+      dev: 'tsx watch src/worker.ts',
+      build: 'tsc -p tsconfig.json',
+      typecheck: 'tsc --noEmit -p tsconfig.json',
+      start: 'node dist/worker.js',
+    },
+    dependencies: {
+      '@hubforge/db': 'workspace:*',
+    },
+    devDependencies: {
+      '@types/node': '^20.0.0',
+      tsx: '^4.9.0',
+      typescript: '^5.4.0',
+    },
+  };
+
+  return `${JSON.stringify(pkg, null, 2)}\n`;
+}
+
+function jobsWorkerTs(): string {
+  return `import { JobService } from '@hubforge/db';
+
+function parsePayload(input: string | null): unknown {
+  if (!input) return null;
+  try {
+    return JSON.parse(input);
+  } catch {
+    return input;
+  }
+}
+
+function parseCronMinutes(cron: string): number {
+  // Local-dev parser supports patterns like "*/5 * * * *" and "0 * * * *".
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length < 1) return 5;
+  const minute = parts[0] ?? '*/5';
+
+  if (minute.startsWith('*/')) {
+    const step = Number(minute.slice(2));
+    return Number.isFinite(step) && step > 0 ? step : 5;
+  }
+
+  const atMinute = Number(minute);
+  if (Number.isFinite(atMinute) && atMinute >= 0 && atMinute <= 59) {
+    const now = new Date();
+    const next = new Date(now);
+    next.setSeconds(0, 0);
+    next.setMinutes(atMinute);
+    if (next <= now) next.setHours(next.getHours() + 1);
+    return Math.max(1, Math.round((next.getTime() - now.getTime()) / 60000));
+  }
+
+  return 5;
+}
+
+function computeNextRunAt(cron: string): Date {
+  const minutes = parseCronMinutes(cron);
+  return new Date(Date.now() + minutes * 60000);
+}
+
+async function executeJob(job: {
+  id: string;
+  jobType: string;
+  tenantId: string | null;
+  payload: string | null;
+}) {
+  const payload = parsePayload(job.payload);
+  return { ok: true, message: \`Job \${job.jobType} processed\`, tenantId: job.tenantId, payload };
+}
+
+async function processOneQueuedJob() {
+  const claimed = await JobService.claimNextJob();
+  if (!claimed) return false;
+
+  try {
+    const result = await executeJob({
+      id: claimed.id,
+      jobType: claimed.jobType,
+      tenantId: claimed.tenantId,
+      payload: claimed.payload,
+    });
+    await JobService.markCompleted(claimed.id, result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown worker error';
+    await JobService.markFailed(claimed.id, message);
+  }
+
+  return true;
+}
+
+async function enqueueDueSchedules() {
+  const due = await JobService.listDueSchedules(new Date());
+  for (const schedule of due) {
+    await JobService.enqueue({
+      tenantId: schedule.tenantId,
+      scheduleId: schedule.id,
+      jobType: schedule.jobType,
+      payload: schedule.payload ? parsePayload(schedule.payload) : null,
+      priority: 1,
+      scheduledFor: new Date(),
+    });
+
+    await JobService.touchScheduleRun(schedule.id, computeNextRunAt(schedule.cron));
+  }
+
+  return due.length;
+}
+
+async function workerLoop() {
+  const scheduled = await enqueueDueSchedules();
+  let processed = 0;
+  while (await processOneQueuedJob()) {
+    processed += 1;
+  }
+
+  if (scheduled > 0 || processed > 0) {
+    console.log(\`[jobs] scheduled=\${scheduled} processed=\${processed}\`);
+  }
+}
+
+async function startWorker() {
+  console.log('[jobs] worker started');
+  await workerLoop();
+  setInterval(() => {
+    void workerLoop();
+  }, 5000);
+}
+
+void startWorker();
+`;
+}
+
 function dbBootstrapPostgresScript(): string {
   return `import { readFileSync, existsSync } from 'node:fs';
 import { Client } from 'pg';
@@ -2988,10 +3220,24 @@ function dbJobsTs(): string {
 
 export type JobInput = {
   tenantId: string | null;
+  scheduleId?: string | null;
   jobType: string;
   payload?: unknown;
   priority?: number;
+  scheduledFor?: Date | null;
+  maxAttempts?: number;
   createdBy?: string | null;
+};
+
+export type JobScheduleInput = {
+  tenantId: string;
+  name: string;
+  jobType: string;
+  cron: string;
+  timezone?: string;
+  payload?: unknown;
+  isActive?: boolean;
+  nextRunAt?: Date | null;
 };
 
 export class JobService {
@@ -2999,9 +3245,12 @@ export class JobService {
     return prisma.backgroundJob.create({
       data: {
         tenantId: input.tenantId,
+        scheduleId: input.scheduleId ?? null,
         jobType: input.jobType,
         status: 'queued',
         priority: input.priority ?? 0,
+        maxAttempts: input.maxAttempts ?? 3,
+        scheduledFor: input.scheduledFor ?? null,
         payload: input.payload == null ? null : JSON.stringify(input.payload),
         createdBy: input.createdBy ?? null,
       },
@@ -3013,6 +3262,21 @@ export class JobService {
       where: tenantId ? { tenantId } : {},
       orderBy: { createdAt: 'desc' },
       take: 100,
+      include: {
+        schedule: true,
+      },
+    });
+  }
+
+  static async getById(jobId: string, tenantId: string | null) {
+    return prisma.backgroundJob.findFirst({
+      where: {
+        id: jobId,
+        ...(tenantId ? { tenantId } : {}),
+      },
+      include: {
+        schedule: true,
+      },
     });
   }
 
@@ -3023,6 +3287,146 @@ export class JobService {
         status: 'queued',
         error: null,
         nextRetry: null,
+        completedAt: null,
+      },
+    });
+  }
+
+  static async cancel(jobId: string, tenantId: string | null) {
+    return prisma.backgroundJob.updateMany({
+      where: {
+        id: jobId,
+        ...(tenantId ? { tenantId } : {}),
+      },
+      data: {
+        status: 'cancelled',
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  static async markRunning(jobId: string) {
+    return prisma.backgroundJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'running',
+      },
+    });
+  }
+
+  static async markCompleted(jobId: string, result?: unknown) {
+    return prisma.backgroundJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'completed',
+        result: result == null ? null : JSON.stringify(result),
+        error: null,
+        completedAt: new Date(),
+      },
+    });
+  }
+
+  static async markFailed(jobId: string, errorMessage: string) {
+    const job = await prisma.backgroundJob.findUnique({ where: { id: jobId } });
+    if (!job) return null;
+
+    const attempts = job.attempts + 1;
+    const hasRetries = attempts < job.maxAttempts;
+    return prisma.backgroundJob.update({
+      where: { id: jobId },
+      data: {
+        attempts,
+        status: hasRetries ? 'queued' : 'failed',
+        error: errorMessage,
+        nextRetry: hasRetries ? new Date(Date.now() + Math.pow(2, attempts) * 60000) : null,
+      },
+    });
+  }
+
+  static async claimNextJob() {
+    const now = new Date();
+    const job = await prisma.backgroundJob.findFirst({
+      where: {
+        status: 'queued',
+        OR: [{ scheduledFor: null }, { scheduledFor: { lte: now } }],
+      },
+      orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+    });
+
+    if (!job) return null;
+
+    const claimed = await prisma.backgroundJob.updateMany({
+      where: { id: job.id, status: 'queued' },
+      data: { status: 'running' },
+    });
+
+    if (claimed.count === 0) return null;
+    return prisma.backgroundJob.findUnique({ where: { id: job.id } });
+  }
+
+  static async listSchedules(tenantId: string) {
+    return prisma.jobSchedule.findMany({
+      where: { tenantId },
+      orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  static async createSchedule(input: JobScheduleInput) {
+    return prisma.jobSchedule.create({
+      data: {
+        tenantId: input.tenantId,
+        name: input.name,
+        jobType: input.jobType,
+        cron: input.cron,
+        timezone: input.timezone ?? 'UTC',
+        payload: input.payload == null ? null : JSON.stringify(input.payload),
+        isActive: input.isActive ?? true,
+        nextRunAt: input.nextRunAt ?? null,
+      },
+    });
+  }
+
+  static async updateSchedule(
+    id: string,
+    tenantId: string,
+    patch: Partial<{ name: string; cron: string; timezone: string; payload: unknown; isActive: boolean; nextRunAt: Date | null }>,
+  ) {
+    return prisma.jobSchedule.updateMany({
+      where: { id, tenantId },
+      data: {
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.cron !== undefined ? { cron: patch.cron } : {}),
+        ...(patch.timezone !== undefined ? { timezone: patch.timezone } : {}),
+        ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
+        ...(patch.nextRunAt !== undefined ? { nextRunAt: patch.nextRunAt } : {}),
+        ...(patch.payload !== undefined ? { payload: patch.payload == null ? null : JSON.stringify(patch.payload) } : {}),
+      },
+    });
+  }
+
+  static async deleteSchedule(id: string, tenantId: string) {
+    return prisma.jobSchedule.deleteMany({
+      where: { id, tenantId },
+    });
+  }
+
+  static async listDueSchedules(now: Date) {
+    return prisma.jobSchedule.findMany({
+      where: {
+        isActive: true,
+        nextRunAt: { lte: now },
+      },
+      orderBy: { nextRunAt: 'asc' },
+    });
+  }
+
+  static async touchScheduleRun(id: string, nextRunAt: Date) {
+    return prisma.jobSchedule.update({
+      where: { id },
+      data: {
+        lastRunAt: new Date(),
+        nextRunAt,
       },
     });
   }
@@ -3215,6 +3619,7 @@ model Tenant {
   settings     Setting[]
   roles        Role[]
   auditLogs    AuditLog[]
+  jobSchedules JobSchedule[]
   backgroundJobs BackgroundJob[]${authServerSettingsRelation}
 }
 
@@ -3343,6 +3748,7 @@ model RolePermission {
 model BackgroundJob {
   id           String   @id @default(cuid())
   tenantId     String?
+  scheduleId   String?
   jobType      String
   status       String
   priority     Int      @default(0)
@@ -3358,11 +3764,33 @@ model BackgroundJob {
   updatedAt    DateTime @updatedAt
   createdBy    String?
 
-  tenant         Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdByUser  User?   @relation("BackgroundJobCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  tenant         Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schedule       JobSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  createdByUser  User?        @relation("BackgroundJobCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
 
-  @@index([tenantId, status])
-  @@index([status, priority, createdAt])
+  @@index([tenantId, status, scheduledFor])
+  @@index([scheduleId])
+}
+
+model JobSchedule {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  jobType     String
+  cron        String
+  timezone    String   @default("UTC")
+  payload     String?
+  isActive    Boolean  @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  jobs        BackgroundJob[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive, nextRunAt])
 }
 ${authServerSettingsModel}
 `;
@@ -3484,6 +3912,7 @@ CREATE TABLE IF NOT EXISTS role_permission (
 CREATE TABLE IF NOT EXISTS background_job (
   id TEXT PRIMARY KEY,
   tenant_id TEXT,
+  schedule_id TEXT,
   job_type TEXT NOT NULL,
   status TEXT NOT NULL,
   priority INTEGER NOT NULL DEFAULT 0,
@@ -3498,6 +3927,22 @@ CREATE TABLE IF NOT EXISTS background_job (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   created_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS job_schedule (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  job_type TEXT NOT NULL,
+  cron TEXT NOT NULL,
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  payload TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  last_run_at TEXT,
+  next_run_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tenant_id, name)
 );${authServerMigration}
 `;
 }

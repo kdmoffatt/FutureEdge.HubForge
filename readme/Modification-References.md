@@ -2,6 +2,25 @@
 
 This file tracks implementation changes made in this session.
 
+## Latest update (framework jobs scheduler parity)
+
+Completed framework-level background jobs scheduler parity updates in generator templates.
+
+- Added scheduler-capable jobs architecture in `full-pack.ts` templates:
+  - Prisma models: `JobSchedule` + `BackgroundJob.scheduleId` relation
+  - Baseline SQL migration template: `job_schedule` table and `background_job.schedule_id`
+  - `JobService` expanded with schedule CRUD, due-schedule discovery, claim/mark lifecycle, and schedule run touch APIs
+  - API jobs routes expanded with job detail/cancel and schedule list/create/update/delete endpoints
+- Added generated jobs worker package:
+  - `packages/jobs/package.json`
+  - `packages/jobs/tsconfig.json`
+  - `packages/jobs/src/worker.ts` (cron parser + due schedule enqueue + queue processing loop)
+- Updated generated root scripts with `dev:jobs` and wired API route generation to `apps/api/src/routes/background-jobs.ts`
+
+Validation completed for framework jobs scheduler pass:
+
+- `pnpm --filter @hubforge/cli run build` passed
+
 ## Latest update (framework template parity pass)
 
 Completed framework-level parity updates in generator templates so newly scaffolded projects inherit scoped settings and full RBAC behaviors.

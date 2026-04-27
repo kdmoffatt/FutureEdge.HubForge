@@ -85,7 +85,7 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 
 - [x] Settings scope expansion (`environmentId`, `scope`) with API/UI support
 - [x] Full RBAC management parity (assignment + edit/delete + permissions CRUD)
-- [ ] Background jobs scheduler + cron model + worker orchestration scripts
+- [x] Background jobs scheduler + cron model + worker orchestration scripts
 - [ ] Stripe webhook + subscription lifecycle + local mock billing fallback
 - [ ] Notification template model + provider abstraction + delivery log UI
 - [ ] AI chat assistant endpoints + portal assistant page + permission gating
