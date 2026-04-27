@@ -27,7 +27,7 @@ Init options:
   --force                 Overwrite target directory if it already exists
 
 Feature options:
-  --type <kind>           api | api-resource | admin-resource | ui | public-page | tenant-module | worker | auth-flow | billing-module | notifications-module | ai-agent (default: api)
+  --type <kind>           api | api-resource | admin-resource | ui | public-page | tenant-module | worker | background-job | auth-flow | billing-module | notifications-module | ai-agent (default: api)
   --target <path>         Path to target project (default: current directory)
 
 Infra options:
@@ -45,6 +45,7 @@ Examples:
   hubforge feature add settings --type ui
   hubforge feature add catalog --type api-resource
   hubforge feature add crm --type tenant-module
+  hubforge feature add sync-orders --type background-job
   hubforge feature add auth --type auth-flow
   hubforge feature add notifications --type notifications-module
   hubforge feature add billing --type api

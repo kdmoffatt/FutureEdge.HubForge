@@ -34,10 +34,12 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] `feature add ui` (authenticated portal route)
 - [x] `feature add api-resource` with server patching
 - [x] `feature add tenant-module` with module registry patching
+- [x] `feature add tenant-module` with module registry patching and module seed registration
 - [x] `feature add auth-flow`
 - [x] `feature add billing-module`
 - [x] `feature add notifications-module` (Firebase-default provider baseline)
 - [x] `feature add ai-agent`
+- [x] `feature add background-job` (API trigger route + worker pairing)
 
 ## Init profile and auth configuration
 
@@ -82,6 +84,7 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 ## Platform services checklist (latest scan)
 
 - [x] ORM baseline (Prisma schema + migrations + bootstrap)
+- [x] Unified seeding baseline (core seed + module seed registry + module seed hooks)
 - [x] API routing and middleware baseline
 - [x] Data validation/serialization baseline via zod event schemas and typed route patterns
 - [x] Cache management baseline (in-memory API response cache)
@@ -98,6 +101,7 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] Rate limiting/throttling baseline (in-memory per-IP counter)
 - [x] Cloud-native/container baseline (`infra/compose` + template profiles)
 - [x] Background job baseline (`worker` generator + notifications worker)
+- [x] Tenant admin baseline for production settings/RBAC/jobs (template-generated API routes, DB models/services, and portal pages)
 - [x] Notifications baseline (Firebase-default scaffolding, provider env)
 - [x] AI integration baseline (FastAPI service + `ai-agent` generator)
 - [x] Serverless-readiness baseline (SDK and route modularity prepared)
@@ -132,3 +136,6 @@ Use this section each day before making scaffold changes.
 - [x] Documentation updated for commands, outputs, and references
 - [x] Remaining parity gaps groomed into actionable tasks
 - [x] Fresh scaffold regeneration verification completed (`_tmp_regen_verify`) with db migrate/seed + API runtime smoke checks
+- [x] Tenant-aware module generation completed (tenant metadata + module seed scaffolding)
+- [x] FieldOps sample workspace aligned with unified seeding + tenant-aware module metadata
+- [x] Comprehensive validation rerun (db seed + api/portal/db typechecks)

@@ -120,6 +120,7 @@ function workflowsModulesRegistryTs(): string {
   id: string;
   name: string;
   route: string;
+  tenantScoped?: boolean;
 };
 
 export const tenantModules: TenantModule[] = [];
