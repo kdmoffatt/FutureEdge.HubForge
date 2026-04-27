@@ -2,6 +2,28 @@
 
 This file tracks implementation changes made in this session.
 
+## Latest update (framework billing lifecycle parity)
+
+Completed framework-level Stripe webhook and subscription lifecycle updates with local mock fallback in generator templates.
+
+- Added billing route generation and server registration in `full-pack.ts` templates:
+  - New generated API route: `apps/api/src/routes/billing.ts`
+  - Endpoints: billing config, subscription list, mock subscription upsert, Stripe webhook ingest
+  - Webhook logic supports Stripe signature verification when configured and JSON mock fallback for local development
+- Added billing database service generation:
+  - New generated DB service: `packages/db/src/billing.ts`
+  - `BillingService` supports subscription lifecycle upsert, billing event recording, and tenant subscription listing
+- Added billing persistence models in Prisma and baseline migration templates:
+  - `BillingCustomer`, `BillingSubscription`, `BillingEvent`
+  - Tenant relations and corresponding SQL table scaffolding
+- Added generated dependency and exports wiring:
+  - API dependency baseline now includes `stripe`
+  - DB index exports `BillingService`
+
+Validation completed for framework billing lifecycle pass:
+
+- `pnpm --filter @hubforge/cli run build` passed
+
 ## Latest update (framework jobs scheduler parity)
 
 Completed framework-level background jobs scheduler parity updates in generator templates.

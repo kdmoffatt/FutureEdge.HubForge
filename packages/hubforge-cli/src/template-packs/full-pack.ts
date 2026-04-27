@@ -36,6 +36,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'email-account-settings.ts'), apiEmailAccountSettingsRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'settings.ts'), apiSettingsRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'rbac.ts'), apiRbacRouteTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'billing.ts'), apiBillingRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'background-jobs.ts'), apiJobsRouteTs());
   if (options.authServer) {
     await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'auth-server-settings.ts'), apiAuthServerSettingsRouteTs());
@@ -142,6 +143,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'index.ts'), dbIndexTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'settings.ts'), dbSettingsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'permissions.ts'), dbPermissionsTs());
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'billing.ts'), dbBillingTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'jobs.ts'), dbJobsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'seed.mjs'), dbSeedScript());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'prisma', 'schema.prisma'), prismaSchema(options));
@@ -641,6 +643,7 @@ function apiPackageJson(): string {
       ioredis: '^5.4.1',
       jose: '^5.9.3',
       nodemailer: '^6.10.1',
+      stripe: '^16.10.0',
       zod: '^3.23.0',
     },
     devDependencies: {
@@ -687,6 +690,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerEmailAccountSettingsRoutes } from './routes/email-account-settings.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerUsersRoutes, registerRolesRoutes, registerPermissionsRoutes } from './routes/rbac.js';
+import { registerBillingRoutes } from './routes/billing.js';
 import { registerJobRoutes } from './routes/background-jobs.js';
 import { PermissionRegistry } from '@hubforge/db';
 ${authServerImport}
@@ -700,6 +704,7 @@ const publicV1Paths = new Set([
   '/v1/auth/login',
   '/v1/auth/register',
   '/v1/auth/me',
+  '/v1/billing/webhooks/stripe',
 ]);
 
 app.use(
@@ -795,6 +800,7 @@ registerSettingsRoutes(app);
 registerUsersRoutes(app);
 registerRolesRoutes(app);
 registerPermissionsRoutes(app);
+registerBillingRoutes(app);
 registerJobRoutes(app);
 
 app.use('/v1/*', async (c, next) => {
@@ -1987,6 +1993,232 @@ export function registerPermissionsRoutes(app: Hono): void {
 `;
 }
 
+function apiBillingRouteTs(): string {
+  return `import type { Hono } from 'hono';
+import Stripe from 'stripe';
+import { BillingService, type BillingSubscriptionStatus } from '@hubforge/db';
+import { requireAuth } from '../lib/auth.js';
+
+type GenericObject = Record<string, unknown>;
+
+function parseIsoDate(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? null : parsed;
+}
+
+function parseUnixSeconds(value: unknown): Date | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return new Date(value * 1000);
+}
+
+function normalizeStatus(input: unknown): BillingSubscriptionStatus {
+  if (typeof input !== 'string') return 'incomplete';
+  const value = input.toLowerCase();
+  if (value === 'trialing' || value === 'active' || value === 'past_due' || value === 'canceled' || value === 'unpaid' || value === 'incomplete' || value === 'incomplete_expired' || value === 'paused') {
+    return value;
+  }
+  return 'incomplete';
+}
+
+function extractMetadata(input: unknown): Record<string, unknown> | null {
+  if (typeof input !== 'object' || !input) return null;
+  return input as Record<string, unknown>;
+}
+
+function shouldUseStripeVerification(): boolean {
+  const provider = (process.env['BILLING_PROVIDER'] ?? 'stripe').toLowerCase();
+  if (provider !== 'stripe') return false;
+  const stripeSecret = process.env['STRIPE_SECRET_KEY'] ?? '';
+  const webhookSecret = process.env['STRIPE_WEBHOOK_SECRET'] ?? '';
+  const hasValidStripeSecret = stripeSecret.startsWith('sk_') && !stripeSecret.endsWith('change_me');
+  const hasValidWebhookSecret = webhookSecret.startsWith('whsec_') && !webhookSecret.endsWith('change_me');
+  return hasValidStripeSecret && hasValidWebhookSecret;
+}
+
+function resolveTenantIdFromMetadata(metadata: Record<string, unknown> | null, fallbackTenantId: string | null): string | null {
+  const metadataTenant = metadata?.['tenantId'];
+  if (typeof metadataTenant === 'string' && metadataTenant.length > 0) return metadataTenant;
+  return fallbackTenantId;
+}
+
+async function processStripeLikeEvent(event: GenericObject, tenantIdHint: string | null) {
+  const eventType = typeof event['type'] === 'string' ? event['type'] : 'unknown';
+  const eventId = typeof event['id'] === 'string' ? event['id'] : null;
+  const data = typeof event['data'] === 'object' && event['data'] ? (event['data'] as GenericObject) : null;
+  const object = data && typeof data['object'] === 'object' && data['object'] ? (data['object'] as GenericObject) : null;
+
+  const metadata = extractMetadata(object?.['metadata']);
+  const tenantId = resolveTenantIdFromMetadata(metadata, tenantIdHint);
+  if (!tenantId) {
+    return { ok: false as const, status: 400, body: { error: 'tenantId is required in x-tenant-id header or event metadata' } };
+  }
+
+  await BillingService.recordEvent({
+    tenantId,
+    provider: 'stripe',
+    eventType,
+    externalEventId: eventId,
+    payload: event,
+    status: 'received',
+  });
+
+  if (eventType === 'customer.subscription.created' || eventType === 'customer.subscription.updated' || eventType === 'customer.subscription.deleted') {
+    const subscriptionId = typeof object?.['id'] === 'string' ? object['id'] : null;
+    const customerExternalId = typeof object?.['customer'] === 'string' ? object['customer'] : null;
+    if (!subscriptionId || !customerExternalId) {
+      return { ok: false as const, status: 400, body: { error: 'subscription id and customer id are required in event payload' } };
+    }
+
+    const items = object?.['items'];
+    const itemsData = typeof items === 'object' && items ? (items as GenericObject)['data'] : null;
+    const firstItem = Array.isArray(itemsData) && itemsData.length > 0 && typeof itemsData[0] === 'object' && itemsData[0]
+      ? (itemsData[0] as GenericObject)
+      : null;
+    const firstPrice = firstItem && typeof firstItem['price'] === 'object' && firstItem['price'] ? (firstItem['price'] as GenericObject) : null;
+    const planCode = typeof firstPrice?.['id'] === 'string' ? firstPrice['id'] : 'default';
+    const currency = typeof object?.['currency'] === 'string'
+      ? object['currency'].toUpperCase()
+      : (process.env['BILLING_CURRENCY'] ?? 'USD').toUpperCase();
+    const status = eventType === 'customer.subscription.deleted'
+      ? 'canceled'
+      : normalizeStatus(object?.['status']);
+
+    const customerEmail = typeof object?.['customer_email'] === 'string' ? object['customer_email'] : null;
+    await BillingService.upsertSubscriptionLifecycle({
+      tenantId,
+      provider: 'stripe',
+      externalCustomerId: customerExternalId,
+      customerEmail,
+      externalSubscriptionId: subscriptionId,
+      planCode,
+      status,
+      currency,
+      cancelAtPeriodEnd: Boolean(object?.['cancel_at_period_end']),
+      currentPeriodStart: parseUnixSeconds(object?.['current_period_start']),
+      currentPeriodEnd: parseUnixSeconds(object?.['current_period_end']),
+      metadata,
+    });
+  }
+
+  if (eventType === 'invoice.payment_failed' || eventType === 'invoice.payment_succeeded') {
+    const subscriptionId = typeof object?.['subscription'] === 'string' ? object['subscription'] : null;
+    const customerExternalId = typeof object?.['customer'] === 'string' ? object['customer'] : null;
+    if (subscriptionId && customerExternalId) {
+      await BillingService.upsertSubscriptionLifecycle({
+        tenantId,
+        provider: 'stripe',
+        externalCustomerId: customerExternalId,
+        customerEmail: typeof object?.['customer_email'] === 'string' ? object['customer_email'] : null,
+        externalSubscriptionId: subscriptionId,
+        planCode: 'default',
+        status: eventType === 'invoice.payment_succeeded' ? 'active' : 'past_due',
+        currency: typeof object?.['currency'] === 'string'
+          ? object['currency'].toUpperCase()
+          : (process.env['BILLING_CURRENCY'] ?? 'USD').toUpperCase(),
+        metadata,
+      });
+    }
+  }
+
+  await BillingService.recordEvent({
+    tenantId,
+    provider: 'stripe',
+    eventType,
+    externalEventId: eventId,
+    payload: event,
+    status: 'processed',
+  });
+
+  return { ok: true as const, status: 200, body: { received: true, eventType } };
+}
+
+export function registerBillingRoutes(app: Hono): void {
+  app.get('/v1/billing/config', requireAuth, async (c) => {
+    return c.json({
+      provider: process.env['BILLING_PROVIDER'] ?? 'stripe',
+      currency: (process.env['BILLING_CURRENCY'] ?? 'USD').toUpperCase(),
+      stripeConfigured: shouldUseStripeVerification(),
+      mockFallbackEnabled: true,
+    });
+  });
+
+  app.get('/v1/billing/subscriptions', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const subscriptions = await BillingService.listSubscriptions(tenantId);
+    return c.json(subscriptions);
+  });
+
+  app.post('/v1/billing/subscriptions/mock', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const externalCustomerId = typeof body['externalCustomerId'] === 'string' ? body['externalCustomerId'] : null;
+    const externalSubscriptionId = typeof body['externalSubscriptionId'] === 'string' ? body['externalSubscriptionId'] : null;
+    if (!externalCustomerId || !externalSubscriptionId) {
+      return c.json({ error: 'externalCustomerId and externalSubscriptionId are required' }, 400);
+    }
+
+    const subscription = await BillingService.upsertSubscriptionLifecycle({
+      tenantId,
+      provider: 'mock',
+      externalCustomerId,
+      customerEmail: typeof body['customerEmail'] === 'string' ? body['customerEmail'] : null,
+      externalSubscriptionId,
+      planCode: typeof body['planCode'] === 'string' ? body['planCode'] : 'mock-plan',
+      status: normalizeStatus(body['status'] ?? 'active'),
+      currency: typeof body['currency'] === 'string'
+        ? body['currency'].toUpperCase()
+        : (process.env['BILLING_CURRENCY'] ?? 'USD').toUpperCase(),
+      cancelAtPeriodEnd: Boolean(body['cancelAtPeriodEnd']),
+      currentPeriodStart: parseIsoDate(body['currentPeriodStart']),
+      currentPeriodEnd: parseIsoDate(body['currentPeriodEnd']),
+      metadata: extractMetadata(body['metadata']),
+    });
+
+    return c.json(subscription, 201);
+  });
+
+  app.post('/v1/billing/webhooks/stripe', async (c) => {
+    const tenantIdHeader = c.req.header('x-tenant-id') ?? null;
+    const rawBody = await c.req.raw.text();
+
+    let eventPayload: GenericObject;
+    if (shouldUseStripeVerification()) {
+      const signature = c.req.header('stripe-signature');
+      if (!signature) return c.json({ error: 'stripe-signature header required' }, 400);
+
+      const stripe = new Stripe(process.env['STRIPE_SECRET_KEY'] as string);
+      try {
+        const webhookEvent = stripe.webhooks.constructEvent(
+          rawBody,
+          signature,
+          process.env['STRIPE_WEBHOOK_SECRET'] as string,
+        );
+        eventPayload = webhookEvent as unknown as GenericObject;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'invalid stripe signature';
+        return c.json({ error: message }, 400);
+      }
+    } else {
+      try {
+        const parsed = JSON.parse(rawBody) as unknown;
+        if (!parsed || typeof parsed !== 'object') return c.json({ error: 'invalid webhook payload' }, 400);
+        eventPayload = parsed as GenericObject;
+      } catch {
+        return c.json({ error: 'invalid webhook payload' }, 400);
+      }
+    }
+
+    const processed = await processStripeLikeEvent(eventPayload, tenantIdHeader);
+    return c.json(processed.body, processed.status);
+  });
+}
+`;
+}
+
 function apiJobsRouteTs(): string {
   return `import type { Hono } from 'hono';
 import { JobService } from '@hubforge/db';
@@ -3009,6 +3241,7 @@ if (process.env['NODE_ENV'] !== 'production') {
 export { PrismaClient };
 export { SettingsService, type SettingValue } from './settings.js';
 export { PermissionRegistry } from './permissions.js';
+export { BillingService, type BillingSubscriptionStatus } from './billing.js';
 export { JobService } from './jobs.js';
 `;
 }
@@ -3197,6 +3430,8 @@ const defaults: Definition[] = [
   { module: 'roles', action: 'manage', description: 'Create/update roles and permissions' },
   { module: 'settings', action: 'read', description: 'View tenant settings' },
   { module: 'settings', action: 'update', description: 'Update tenant settings' },
+  { module: 'billing', action: 'read', description: 'View billing subscriptions and events' },
+  { module: 'billing', action: 'manage', description: 'Manage billing lifecycle and mock events' },
   { module: 'jobs', action: 'read', description: 'View background jobs' },
   { module: 'jobs', action: 'trigger', description: 'Trigger background jobs' },
 ];
@@ -3210,6 +3445,135 @@ export class PermissionRegistry {
         create: perm,
       });
     }
+  }
+}
+`;
+}
+
+function dbBillingTs(): string {
+  return `import { prisma } from './index.js';
+
+export type BillingSubscriptionStatus =
+  | 'trialing'
+  | 'active'
+  | 'past_due'
+  | 'canceled'
+  | 'unpaid'
+  | 'incomplete'
+  | 'incomplete_expired'
+  | 'paused';
+
+export type BillingLifecycleInput = {
+  tenantId: string;
+  provider: 'stripe' | 'mock';
+  externalCustomerId: string;
+  customerEmail?: string | null;
+  customerName?: string | null;
+  externalSubscriptionId: string;
+  planCode: string;
+  status: BillingSubscriptionStatus;
+  currency: string;
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodStart?: Date | null;
+  currentPeriodEnd?: Date | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+export type BillingEventInput = {
+  tenantId: string;
+  provider: 'stripe' | 'mock';
+  eventType: string;
+  externalEventId?: string | null;
+  payload: unknown;
+  status: 'received' | 'processed' | 'failed';
+  error?: string | null;
+};
+
+export class BillingService {
+  static async listSubscriptions(tenantId: string) {
+    return prisma.billingSubscription.findMany({
+      where: { tenantId },
+      include: { customer: true },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+  }
+
+  static async upsertSubscriptionLifecycle(input: BillingLifecycleInput) {
+    const customer = await prisma.billingCustomer.upsert({
+      where: {
+        tenantId_provider_externalCustomerId: {
+          tenantId: input.tenantId,
+          provider: input.provider,
+          externalCustomerId: input.externalCustomerId,
+        },
+      },
+      update: {
+        email: input.customerEmail ?? null,
+        name: input.customerName ?? null,
+      },
+      create: {
+        tenantId: input.tenantId,
+        provider: input.provider,
+        externalCustomerId: input.externalCustomerId,
+        email: input.customerEmail ?? null,
+        name: input.customerName ?? null,
+      },
+    });
+
+    const cancelledAt = input.status === 'canceled' ? new Date() : null;
+    const metadata = input.metadata == null ? null : JSON.stringify(input.metadata);
+
+    return prisma.billingSubscription.upsert({
+      where: {
+        tenantId_provider_externalSubscriptionId: {
+          tenantId: input.tenantId,
+          provider: input.provider,
+          externalSubscriptionId: input.externalSubscriptionId,
+        },
+      },
+      update: {
+        customerId: customer.id,
+        planCode: input.planCode,
+        status: input.status,
+        currency: input.currency,
+        cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+        currentPeriodStart: input.currentPeriodStart ?? null,
+        currentPeriodEnd: input.currentPeriodEnd ?? null,
+        metadata,
+        cancelledAt,
+      },
+      create: {
+        tenantId: input.tenantId,
+        customerId: customer.id,
+        provider: input.provider,
+        externalSubscriptionId: input.externalSubscriptionId,
+        planCode: input.planCode,
+        status: input.status,
+        currency: input.currency,
+        cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+        currentPeriodStart: input.currentPeriodStart ?? null,
+        currentPeriodEnd: input.currentPeriodEnd ?? null,
+        metadata,
+        cancelledAt,
+      },
+      include: {
+        customer: true,
+      },
+    });
+  }
+
+  static async recordEvent(input: BillingEventInput) {
+    return prisma.billingEvent.create({
+      data: {
+        tenantId: input.tenantId,
+        provider: input.provider,
+        eventType: input.eventType,
+        externalEventId: input.externalEventId ?? null,
+        payload: JSON.stringify(input.payload),
+        status: input.status,
+        error: input.error ?? null,
+      },
+    });
   }
 }
 `;
@@ -3619,6 +3983,9 @@ model Tenant {
   settings     Setting[]
   roles        Role[]
   auditLogs    AuditLog[]
+  billingCustomers     BillingCustomer[]
+  billingSubscriptions BillingSubscription[]
+  billingEvents        BillingEvent[]
   jobSchedules JobSchedule[]
   backgroundJobs BackgroundJob[]${authServerSettingsRelation}
 }
@@ -3743,6 +4110,65 @@ model RolePermission {
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, permissionId])
+}
+
+model BillingCustomer {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  provider           String   @default("stripe")
+  externalCustomerId String
+  email              String?
+  name               String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptions  BillingSubscription[]
+
+  @@unique([tenantId, provider, externalCustomerId])
+  @@index([tenantId, provider])
+}
+
+model BillingSubscription {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  customerId             String
+  provider               String   @default("stripe")
+  externalSubscriptionId String
+  planCode               String
+  status                 String
+  currency               String   @default("USD")
+  cancelAtPeriodEnd      Boolean  @default(false)
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelledAt            DateTime?
+  metadata               String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer  BillingCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider, externalSubscriptionId])
+  @@index([tenantId, status])
+}
+
+model BillingEvent {
+  id              String   @id @default(cuid())
+  tenantId        String
+  provider        String   @default("stripe")
+  eventType       String
+  externalEventId String?
+  payload         String
+  status          String
+  error           String?
+  receivedAt      DateTime @default(now())
+  processedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, receivedAt])
+  @@index([externalEventId])
 }
 
 model BackgroundJob {
@@ -3907,6 +4333,50 @@ CREATE TABLE IF NOT EXISTS role_permission (
   permission_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
   UNIQUE (role_id, permission_id)
+);
+
+CREATE TABLE IF NOT EXISTS billing_customer (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'stripe',
+  external_customer_id TEXT NOT NULL,
+  email TEXT,
+  name TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tenant_id, provider, external_customer_id)
+);
+
+CREATE TABLE IF NOT EXISTS billing_subscription (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'stripe',
+  external_subscription_id TEXT NOT NULL,
+  plan_code TEXT NOT NULL,
+  status TEXT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'USD',
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  current_period_start TEXT,
+  current_period_end TEXT,
+  cancelled_at TEXT,
+  metadata TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tenant_id, provider, external_subscription_id)
+);
+
+CREATE TABLE IF NOT EXISTS billing_event (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'stripe',
+  event_type TEXT NOT NULL,
+  external_event_id TEXT,
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT,
+  received_at TEXT NOT NULL,
+  processed_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS background_job (
