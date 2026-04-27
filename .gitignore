@@ -1,5 +1,43 @@
+# ── Dependencies ────────────────────────────────────────────────────────────
 node_modules/
+.pnp
+.pnp.js
+
+# ── Build outputs ────────────────────────────────────────────────────────────
 dist/
+build/
+out/
+*.tsbuildinfo
+
+# ── Lockfiles (managed by pnpm, checked in via pnpm-lock.yaml) ───────────────
+# pnpm-lock.yaml is intentionally NOT ignored so the workspace is reproducible
+
+# ── Logs ────────────────────────────────────────────────────────────────────
 *.log
+*.log.*
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Temporary scaffold / test directories ────────────────────────────────────
+# Created by `hubforge init` smoke tests and CLI development
+_tmp_*/
+
+# ── Environment files ────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── OS / editor artifacts ────────────────────────────────────────────────────
 .DS_Store
-pnpm-lock.yaml
+Thumbs.db
+desktop.ini
+.vscode/settings.json
+.vscode/*.code-workspace
+.idea/
+
+# ── Test / coverage ──────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
