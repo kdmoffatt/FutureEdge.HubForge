@@ -21,6 +21,7 @@ Run from repository root:
   - `pnpm hubforge feature add landing --type public-page --target my-saas`
   - `pnpm hubforge feature add catalog --type api-resource --target my-saas`
   - `pnpm hubforge feature add crm --type tenant-module --target my-saas`
+  - `pnpm hubforge feature add sync-orders --type background-job --target my-saas`
   - `pnpm hubforge feature add auth --type auth-flow --target my-saas`
   - `pnpm hubforge feature add notifications --type notifications-module --target my-saas`
   - `pnpm hubforge infra --target k8s`
@@ -111,6 +112,7 @@ Options:
   - `public-page`
   - `tenant-module`
   - `worker`
+  - `background-job`
   - `auth-flow`
   - `billing-module`
   - `notifications-module`
@@ -125,11 +127,19 @@ Generated output by type:
 - `ui`: authenticated portal route in `apps/portal/app/routes`
 - `public-page`: public React Router route in `apps/ui/app/routes`
 - `tenant-module`: module package in `packages/modules/<slug>` + registry patches in workflows and portal module listing
+- `tenant-module`: module package in `packages/modules/<slug>` + registry patches in workflows and portal module listing + module seed hook registration in `packages/db/scripts/seed-registry.mjs`
 - `worker`: Python worker skeleton in AI app area
+- `background-job`: paired API trigger route + worker skeleton for job-oriented features
 - `auth-flow`: auth route + auth client helper scaffold with provider introspection
 - `billing-module`: billing route + billing events + portal billing page + server patch
 - `notifications-module`: notifications package + API route + worker scaffold + server patch
 - `ai-agent`: AI agent Python scaffold + API invoke route + server patch
+
+Unified seeding baseline:
+
+- Scaffolded DB package now includes `packages/db/scripts/seed-registry.mjs`
+- Base seed entrypoint (`packages/db/scripts/seed.mjs`) invokes `runModuleSeeders(...)`
+- Tenant module generation creates a module `seed.mjs` and auto-registers it in the DB seed registry
 
 ### 3. Infra command
 

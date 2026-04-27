@@ -26,11 +26,17 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'Dockerfile'), apiDockerfile());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'server.ts'), apiServerTs(options));
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'lib', 'auth.ts'), apiAuthLibTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'lib', 'email-settings-store.ts'), apiEmailSettingsStoreLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'lib', 'notifications.ts'), apiNotificationsLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'lib', 'webhook-queue.ts'), apiWebhookQueueLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'health.ts'), apiHealthRouteTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'audit-log.ts'), apiAuditLogRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'tenancy.ts'), apiTenancyRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'auth.ts'), apiAuthRouteTs(options));
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'email-account-settings.ts'), apiEmailAccountSettingsRouteTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'settings.ts'), apiSettingsRouteTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'rbac.ts'), apiRbacRouteTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'jobs.ts'), apiJobsRouteTs());
   if (options.authServer) {
     await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'auth-server-settings.ts'), apiAuthServerSettingsRouteTs());
   }
@@ -46,13 +52,21 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes.ts'), rrRoutesTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'app.css'), tailwindCss());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'theme.ts'), portalThemeLibTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'theme-registry.ts'), portalThemeRegistryTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'public', 'themes', 'example-themeforest-adapter.css'), portalExampleThemeAdapterCss());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_index.tsx'), portalIndexRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', 'login.tsx'), portalLoginRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.tsx'), portalAppLayout(options));
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.dashboard._index.tsx'), portalDashboardRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.users._index.tsx'), portalUsersRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.roles._index.tsx'), portalRolesRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.jobs._index.tsx'), portalJobsRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.audit-log._index.tsx'), portalAuditLogRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.docs._index.tsx'), portalDocsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings._index.tsx'), portalSettingsIndexRoute(options));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.email-account._index.tsx'), portalEmailAccountSettingsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.theme._index.tsx'), portalThemeSettingsRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '$.tsx'), portalNotFoundRoute());
   if (options.authServer) {
     await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.auth-server._index.tsx'), portalAuthServerSettingsRoute());
   }
@@ -118,7 +132,11 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'tsconfig.json'), packageTsConfig());
   await writeTextFile(path.join(targetDir, 'packages', 'db', '.env'), dbEnvFile(options.dbProvider));
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'bootstrap-postgres.mjs'), dbBootstrapPostgresScript());
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'seed-registry.mjs'), dbSeedRegistryScript());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'index.ts'), dbIndexTs());
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'settings.ts'), dbSettingsTs());
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'permissions.ts'), dbPermissionsTs());
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'jobs.ts'), dbJobsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'seed.mjs'), dbSeedScript());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'prisma', 'schema.prisma'), prismaSchema(options));
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'migrations', '0001_init.sql'), initialMigrationSql(options));
@@ -403,6 +421,9 @@ hubforge feature embeddings --type ai-agent
 
 # Background worker
 hubforge feature sync --type worker
+
+# Background job endpoint + worker pairing
+hubforge feature sync-orders --type background-job
 \`\`\`
 
 ---
@@ -612,9 +633,11 @@ function apiPackageJson(): string {
       hono: '^4.8.0',
       ioredis: '^5.4.1',
       jose: '^5.9.3',
+      nodemailer: '^6.10.1',
       zod: '^3.23.0',
     },
     devDependencies: {
+      '@types/nodemailer': '^6.4.15',
       '@types/node': '^20.0.0',
       vitest: '^2.0.0',
       tsx: '^4.9.0',
@@ -645,12 +668,20 @@ function apiServerTs(options: InitScaffoldOptions): string {
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { requireAuth } from './lib/auth.js';
+import nodemailer from 'nodemailer';
 import { sendPushNotification } from './lib/notifications.js';
+import { getEmailAccountSettings } from './lib/email-settings-store.js';
 import { enqueueWebhookDelivery, startWebhookWorker } from './lib/webhook-queue.js';
 import { resolveTenantContext } from '@hubforge/tenancy';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerAuditLogRoutes } from './routes/audit-log.js';
 import { registerTenancyRoutes } from './routes/tenancy.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerEmailAccountSettingsRoutes } from './routes/email-account-settings.js';
+import { registerSettingsRoutes } from './routes/settings.js';
+import { registerUsersRoutes, registerRolesRoutes, registerPermissionsRoutes } from './routes/rbac.js';
+import { registerJobRoutes } from './routes/jobs.js';
+import { PermissionRegistry } from '@hubforge/db';
 ${authServerImport}
 
 const app = new Hono();
@@ -749,8 +780,15 @@ app.use('*', async (c, next) => {
 });
 
 registerHealthRoutes(app);
+registerAuditLogRoutes(app);
 registerTenancyRoutes(app);
 registerAuthRoutes(app);${authServerRegister}
+registerEmailAccountSettingsRoutes(app);
+registerSettingsRoutes(app);
+registerUsersRoutes(app);
+registerRolesRoutes(app);
+registerPermissionsRoutes(app);
+registerJobRoutes(app);
 
 app.use('/v1/*', async (c, next) => {
   if (publicV1Paths.has(c.req.path)) {
@@ -779,6 +817,38 @@ app.post('/v1/notifications/push', async (c) => {
   });
 
   return c.json({ queued: false, messageId });
+});
+
+app.post('/v1/notifications/email', async (c) => {
+  const tenantId = c.req.header('x-tenant-id');
+  if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+  const body = (await c.req.json().catch(() => ({}))) as { to?: unknown; subject?: unknown; text?: unknown; html?: unknown };
+  if (typeof body.to !== 'string' || typeof body.subject !== 'string') {
+    return c.json({ error: 'to and subject are required' }, 400);
+  }
+
+  const settings = await getEmailAccountSettings(tenantId);
+  if (!settings.enabled) {
+    return c.json({ error: 'Email notifications are disabled for this tenant' }, 400);
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: settings.smtpHost,
+    port: settings.smtpPort,
+    secure: settings.smtpSecure,
+    auth: settings.smtpUser ? { user: settings.smtpUser, pass: settings.smtpPass } : undefined,
+  });
+
+  const info = await transporter.sendMail({
+    from: settings.fromName ? settings.fromName + ' <' + settings.fromEmail + '>' : settings.fromEmail,
+    to: body.to,
+    subject: body.subject,
+    text: typeof body.text === 'string' ? body.text : undefined,
+    html: typeof body.html === 'string' ? body.html : undefined,
+  });
+
+  return c.json({ queued: false, messageId: info.messageId });
 });
 
 app.post('/v1/webhooks/dispatch', async (c) => {
@@ -865,6 +935,9 @@ serve({
 });
 
 startWebhookWorker();
+PermissionRegistry.syncToDatabase().catch((error) => {
+  console.error('[hubforge][rbac] Failed to sync permissions:', error);
+});
 `;
 }
 
@@ -1349,6 +1422,324 @@ export function registerAuthServerSettingsRoutes(app: Hono): void {
     });
 
     return c.json(settings);
+  });
+}
+`;
+}
+
+function apiEmailSettingsStoreLibTs(): string {
+  return `import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+
+export type EmailAccountSettings = {
+  enabled: boolean;
+  fromEmail: string;
+  fromName: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPass: string;
+};
+
+const storePath = path.join(process.cwd(), '.data', 'email-account-settings.json');
+
+const defaults: EmailAccountSettings = {
+  enabled: false,
+  fromEmail: '',
+  fromName: 'HubForge Notifications',
+  smtpHost: process.env['SMTP_HOST'] ?? 'localhost',
+  smtpPort: Number(process.env['SMTP_PORT'] ?? 1025),
+  smtpSecure: false,
+  smtpUser: process.env['SMTP_USER'] ?? '',
+  smtpPass: process.env['SMTP_PASS'] ?? '',
+};
+
+type Store = Record<string, EmailAccountSettings>;
+
+async function loadStore(): Promise<Store> {
+  try {
+    const raw = await readFile(storePath, 'utf8');
+    return JSON.parse(raw) as Store;
+  } catch {
+    return {};
+  }
+}
+
+async function saveStore(store: Store): Promise<void> {
+  await mkdir(path.dirname(storePath), { recursive: true });
+  await writeFile(storePath, JSON.stringify(store, null, 2), 'utf8');
+}
+
+export async function getEmailAccountSettings(tenantId: string): Promise<EmailAccountSettings> {
+  const store = await loadStore();
+  return {
+    ...defaults,
+    ...(store[tenantId] ?? {}),
+  };
+}
+
+export async function setEmailAccountSettings(tenantId: string, input: Partial<EmailAccountSettings>): Promise<EmailAccountSettings> {
+  const store = await loadStore();
+  const next: EmailAccountSettings = {
+    ...(store[tenantId] ?? defaults),
+    ...input,
+    enabled: input.enabled === true,
+    smtpPort: Number(input.smtpPort ?? store[tenantId]?.smtpPort ?? defaults.smtpPort),
+    smtpSecure: input.smtpSecure === true,
+    fromName: typeof input.fromName === 'string' ? input.fromName : store[tenantId]?.fromName ?? defaults.fromName,
+    fromEmail: typeof input.fromEmail === 'string' ? input.fromEmail : store[tenantId]?.fromEmail ?? defaults.fromEmail,
+    smtpHost: typeof input.smtpHost === 'string' ? input.smtpHost : store[tenantId]?.smtpHost ?? defaults.smtpHost,
+    smtpUser: typeof input.smtpUser === 'string' ? input.smtpUser : store[tenantId]?.smtpUser ?? defaults.smtpUser,
+    smtpPass: typeof input.smtpPass === 'string' ? input.smtpPass : store[tenantId]?.smtpPass ?? defaults.smtpPass,
+  };
+  store[tenantId] = next;
+  await saveStore(store);
+  return next;
+}
+`;
+}
+
+function apiEmailAccountSettingsRouteTs(): string {
+  return `import type { Hono } from 'hono';
+import { getEmailAccountSettings, setEmailAccountSettings } from '../lib/email-settings-store.js';
+
+export function registerEmailAccountSettingsRoutes(app: Hono): void {
+  app.get('/v1/settings/email-account', async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const settings = await getEmailAccountSettings(tenantId);
+    return c.json(settings);
+  });
+
+  app.put('/v1/settings/email-account', async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const update: Parameters<typeof setEmailAccountSettings>[1] = {};
+
+    if (typeof body['enabled'] === 'boolean') update.enabled = body['enabled'];
+    if (typeof body['fromEmail'] === 'string') update.fromEmail = body['fromEmail'];
+    if (typeof body['fromName'] === 'string') update.fromName = body['fromName'];
+    if (typeof body['smtpHost'] === 'string') update.smtpHost = body['smtpHost'];
+    if (typeof body['smtpPort'] === 'number') update.smtpPort = body['smtpPort'];
+    if (typeof body['smtpSecure'] === 'boolean') update.smtpSecure = body['smtpSecure'];
+    if (typeof body['smtpUser'] === 'string') update.smtpUser = body['smtpUser'];
+    if (typeof body['smtpPass'] === 'string') update.smtpPass = body['smtpPass'];
+
+    const settings = await setEmailAccountSettings(tenantId, update);
+    return c.json(settings);
+  });
+}
+`;
+}
+
+function apiSettingsRouteTs(): string {
+  return `import type { Hono } from 'hono';
+import { SettingsService } from '@hubforge/db';
+import { requireAuth } from '../lib/auth.js';
+
+export function registerSettingsRoutes(app: Hono): void {
+  app.get('/v1/settings/:module', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const module = c.req.param('module');
+    if (!tenantId || !module) return c.json({ error: 'x-tenant-id and module are required' }, 400);
+
+    const settings = await SettingsService.getAll(tenantId, module);
+    return c.json(settings);
+  });
+
+  app.get('/v1/settings/:module/:key', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const module = c.req.param('module');
+    const key = c.req.param('key');
+    if (!tenantId || !module || !key) return c.json({ error: 'x-tenant-id, module, and key are required' }, 400);
+
+    const value = await SettingsService.get(tenantId, module, key);
+    return c.json({ value });
+  });
+
+  app.put('/v1/settings/:module/:key', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const module = c.req.param('module');
+    const key = c.req.param('key');
+    if (!tenantId || !module || !key) return c.json({ error: 'x-tenant-id, module, and key are required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as { value?: unknown };
+    await SettingsService.set(tenantId, module, key, (body.value ?? null) as string | number | boolean | object | null);
+    return c.json({ ok: true });
+  });
+
+  app.delete('/v1/settings/:module/:key', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const module = c.req.param('module');
+    const key = c.req.param('key');
+    if (!tenantId || !module || !key) return c.json({ error: 'x-tenant-id, module, and key are required' }, 400);
+
+    await SettingsService.delete(tenantId, module, key);
+    return c.json({ ok: true });
+  });
+}
+`;
+}
+
+function apiRbacRouteTs(): string {
+  return `import type { Hono } from 'hono';
+import { prisma } from '@hubforge/db';
+import { requireAuth } from '../lib/auth.js';
+
+export function registerUsersRoutes(app: Hono): void {
+  app.get('/v1/users', requireAuth, async (c) => {
+    const users = await prisma.user.findMany({
+      include: {
+        memberships: true,
+        userRoles: { include: { role: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return c.json(users);
+  });
+
+  app.post('/v1/users', requireAuth, async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { email?: unknown; name?: unknown };
+    if (typeof body.email !== 'string') return c.json({ error: 'email is required' }, 400);
+
+    const created = await prisma.user.create({
+      data: {
+        email: body.email,
+        name: typeof body.name === 'string' ? body.name : null,
+      },
+    });
+    return c.json(created, 201);
+  });
+
+  app.post('/v1/users/:userId/roles/:roleId', requireAuth, async (c) => {
+    const userId = c.req.param('userId');
+    const roleId = c.req.param('roleId');
+    if (!userId || !roleId) return c.json({ error: 'userId and roleId are required' }, 400);
+
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId, roleId } },
+      update: {},
+      create: { userId, roleId },
+    });
+    return c.json({ ok: true });
+  });
+}
+
+export function registerRolesRoutes(app: Hono): void {
+  app.get('/v1/roles', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const roles = await prisma.role.findMany({
+      where: { tenantId },
+      include: { permissions: { include: { permission: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return c.json(roles);
+  });
+
+  app.post('/v1/roles', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const body = (await c.req.json().catch(() => ({}))) as { name?: unknown; description?: unknown };
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (typeof body.name !== 'string') return c.json({ error: 'name is required' }, 400);
+
+    const role = await prisma.role.create({
+      data: {
+        tenantId,
+        name: body.name,
+        description: typeof body.description === 'string' ? body.description : null,
+      },
+    });
+    return c.json(role, 201);
+  });
+
+  app.post('/v1/roles/:roleId/permissions/:permissionId', requireAuth, async (c) => {
+    const roleId = c.req.param('roleId');
+    const permissionId = c.req.param('permissionId');
+    if (!roleId || !permissionId) return c.json({ error: 'roleId and permissionId are required' }, 400);
+
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId, permissionId } },
+      update: {},
+      create: { roleId, permissionId },
+    });
+
+    return c.json({ ok: true });
+  });
+}
+
+export function registerPermissionsRoutes(app: Hono): void {
+  app.get('/v1/permissions', requireAuth, async () => {
+    const permissions = await prisma.permission.findMany({ orderBy: [{ module: 'asc' }, { action: 'asc' }] });
+    return Response.json(permissions);
+  });
+}
+`;
+}
+
+function apiJobsRouteTs(): string {
+  return `import type { Hono } from 'hono';
+import { JobService } from '@hubforge/db';
+import { requireAuth } from '../lib/auth.js';
+
+export function registerJobRoutes(app: Hono): void {
+  app.get('/v1/jobs', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const jobs = await JobService.list(tenantId ?? null);
+    return c.json(jobs);
+  });
+
+  app.post('/v1/jobs/:jobType/trigger', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const jobType = c.req.param('jobType');
+    if (!jobType) return c.json({ error: 'jobType is required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as { payload?: unknown; priority?: unknown };
+    const created = await JobService.enqueue({
+      tenantId: tenantId ?? null,
+      jobType,
+      payload: body.payload,
+      priority: typeof body.priority === 'number' ? body.priority : 0,
+      createdBy: null,
+    });
+    return c.json(created, 201);
+  });
+
+  app.post('/v1/jobs/:jobId/retry', requireAuth, async (c) => {
+    const jobId = c.req.param('jobId');
+    if (!jobId) return c.json({ error: 'jobId is required' }, 400);
+
+    const job = await JobService.retry(jobId);
+    return c.json(job);
+  });
+}
+`;
+}
+
+function apiAuditLogRouteTs(): string {
+  return `import type { Hono } from 'hono';
+import { prisma } from '@hubforge/db';
+
+export function registerAuditLogRoutes(app: Hono): void {
+  app.get('/v1/audit-log', async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const page = Number(c.req.query('page') ?? '1');
+    const limit = Math.min(100, Number(c.req.query('limit') ?? '30'));
+    const start = (page - 1) * limit;
+    const [items, total] = await Promise.all([
+      prisma.auditLog.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: 'desc' },
+        skip: start,
+        take: limit,
+      }),
+      prisma.auditLog.count({ where: { tenantId } }),
+    ]);
+    return c.json({ items, total, page, limit });
   });
 }
 `;
@@ -1962,6 +2353,146 @@ if (process.env['NODE_ENV'] !== 'production') {
 }
 
 export { PrismaClient };
+export { SettingsService, type SettingValue } from './settings.js';
+export { PermissionRegistry } from './permissions.js';
+export { JobService } from './jobs.js';
+`;
+}
+
+function dbSettingsTs(): string {
+  return `import { prisma } from './index.js';
+
+export type SettingValue = string | number | boolean | object | null;
+
+export class SettingsService {
+  static async get(
+    tenantId: string | null,
+    module: string,
+    key: string,
+    defaultValue: SettingValue = null,
+  ): Promise<SettingValue> {
+    const setting = await (prisma.setting.findUnique as any)({
+      where: { tenantId_module_key: { tenantId, module, key } },
+    });
+
+    if (!setting) return defaultValue;
+    if (setting.dataType === 'number') return Number(setting.value);
+    if (setting.dataType === 'boolean') return setting.value === 'true';
+    if (setting.dataType === 'json') {
+      try {
+        return JSON.parse(setting.value);
+      } catch {
+        return defaultValue;
+      }
+    }
+    return setting.value;
+  }
+
+  static async set(tenantId: string | null, module: string, key: string, value: SettingValue): Promise<void> {
+    const dataType =
+      typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : typeof value === 'object' ? 'json' : 'string';
+
+    await (prisma.setting.upsert as any)({
+      where: { tenantId_module_key: { tenantId, module, key } },
+      update: { value: typeof value === 'string' ? value : JSON.stringify(value), dataType },
+      create: { tenantId, module, key, value: typeof value === 'string' ? value : JSON.stringify(value), dataType },
+    });
+  }
+
+  static async delete(tenantId: string | null, module: string, key: string): Promise<void> {
+    await (prisma.setting.delete as any)({ where: { tenantId_module_key: { tenantId, module, key } } });
+  }
+
+  static async list(tenantId: string | null, module: string) {
+    return (prisma.setting.findMany as any)({ where: { tenantId, module }, orderBy: { key: 'asc' } });
+  }
+
+  static async getAll(tenantId: string | null, module: string): Promise<Record<string, SettingValue>> {
+    const settings = await this.list(tenantId, module);
+    const out: Record<string, SettingValue> = {};
+    for (const item of settings) {
+      out[item.key] = await this.get(tenantId, module, item.key);
+    }
+    return out;
+  }
+}
+`;
+}
+
+function dbPermissionsTs(): string {
+  return `import { prisma } from './index.js';
+
+type Definition = { module: string; action: string; description?: string };
+
+const defaults: Definition[] = [
+  { module: 'users', action: 'read', description: 'View users' },
+  { module: 'users', action: 'manage', description: 'Create/update users and assignments' },
+  { module: 'roles', action: 'read', description: 'View roles' },
+  { module: 'roles', action: 'manage', description: 'Create/update roles and permissions' },
+  { module: 'settings', action: 'read', description: 'View tenant settings' },
+  { module: 'settings', action: 'update', description: 'Update tenant settings' },
+  { module: 'jobs', action: 'read', description: 'View background jobs' },
+  { module: 'jobs', action: 'trigger', description: 'Trigger background jobs' },
+];
+
+export class PermissionRegistry {
+  static async syncToDatabase(): Promise<void> {
+    for (const perm of defaults) {
+      await (prisma.permission.upsert as any)({
+        where: { module_action: { module: perm.module, action: perm.action } },
+        update: perm.description ? { description: perm.description } : {},
+        create: perm,
+      });
+    }
+  }
+}
+`;
+}
+
+function dbJobsTs(): string {
+  return `import { prisma } from './index.js';
+
+export type JobInput = {
+  tenantId: string | null;
+  jobType: string;
+  payload?: unknown;
+  priority?: number;
+  createdBy?: string | null;
+};
+
+export class JobService {
+  static async enqueue(input: JobInput) {
+    return prisma.backgroundJob.create({
+      data: {
+        tenantId: input.tenantId,
+        jobType: input.jobType,
+        status: 'queued',
+        priority: input.priority ?? 0,
+        payload: input.payload == null ? null : JSON.stringify(input.payload),
+        createdBy: input.createdBy ?? null,
+      },
+    });
+  }
+
+  static async list(tenantId: string | null) {
+    return prisma.backgroundJob.findMany({
+      where: tenantId ? { tenantId } : {},
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  static async retry(jobId: string) {
+    return prisma.backgroundJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'queued',
+        error: null,
+        nextRetry: null,
+      },
+    });
+  }
+}
 `;
 }
 
@@ -1969,6 +2500,7 @@ function dbSeedScript(): string {
   return `#!/usr/bin/env node
 import prismaPkg from '@prisma/client';
 import { createHash } from 'node:crypto';
+import { runModuleSeeders } from './seed-registry.mjs';
 
 const { PrismaClient } = prismaPkg;
 
@@ -1997,6 +2529,63 @@ async function main() {
     create: { tenantId: tenant.id, userId: user.id, role: 'admin' },
   });
 
+  const permissions = [
+    ['users', 'read', 'View users'],
+    ['users', 'manage', 'Create/update users and assignments'],
+    ['roles', 'read', 'View roles'],
+    ['roles', 'manage', 'Create/update roles and permissions'],
+    ['settings', 'read', 'View tenant settings'],
+    ['settings', 'update', 'Update tenant settings'],
+    ['jobs', 'read', 'View background jobs'],
+    ['jobs', 'trigger', 'Trigger background jobs'],
+  ];
+
+  for (const [module, action, description] of permissions) {
+    await prisma.permission.upsert({
+      where: { module_action: { module, action } },
+      update: { description },
+      create: { module, action, description },
+    });
+  }
+
+  const adminRole = await prisma.role.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'Admin' } },
+    update: { description: 'Tenant administrator role' },
+    create: { tenantId: tenant.id, name: 'Admin', description: 'Tenant administrator role' },
+  });
+
+  const allPerms = await prisma.permission.findMany();
+  for (const perm of allPerms) {
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: adminRole.id, permissionId: perm.id } },
+      update: {},
+      create: { roleId: adminRole.id, permissionId: perm.id },
+    });
+  }
+
+  await prisma.userRole.upsert({
+    where: { userId_roleId: { userId: user.id, roleId: adminRole.id } },
+    update: {},
+    create: { userId: user.id, roleId: adminRole.id },
+  });
+
+  await prisma.setting.upsert({
+    where: { tenantId_module_key: { tenantId: tenant.id, module: 'notifications', key: 'emailEnabled' } },
+    update: { value: 'true', dataType: 'boolean' },
+    create: {
+      tenantId: tenant.id,
+      module: 'notifications',
+      key: 'emailEnabled',
+      value: 'true',
+      dataType: 'boolean',
+    },
+  });
+
+  await runModuleSeeders({
+    prisma,
+    tenantIds: [tenant.id],
+  });
+
   console.log('Seed complete');
   console.log('Email: admin@local-demo.com');
   console.log('Password: Password1!');
@@ -2009,6 +2598,18 @@ main()
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());
+`;
+}
+
+function dbSeedRegistryScript(): string {
+  return `const moduleSeeders = [
+];
+
+export async function runModuleSeeders(context) {
+  for (const seed of moduleSeeders) {
+    await seed(context);
+  }
+}
 `;
 }
 
@@ -2058,7 +2659,11 @@ model Tenant {
   name         String
   createdAt    DateTime      @default(now())
   environments Environment[]
-  memberships  Membership[]${authServerSettingsRelation}
+  memberships  Membership[]
+  settings     Setting[]
+  roles        Role[]
+  auditLogs    AuditLog[]
+  backgroundJobs BackgroundJob[]${authServerSettingsRelation}
 }
 
 model Environment {
@@ -2081,6 +2686,8 @@ model User {
   passwordHash String?
   createdAt   DateTime      @default(now())
   memberships Membership[]
+  userRoles   UserRole[]
+  createdJobs BackgroundJob[] @relation("BackgroundJobCreatedBy")
 }
 
 model Membership {
@@ -2096,6 +2703,110 @@ model Membership {
   environment   Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  action     String
+  entityType String
+  entityId   String?
+  traceId    String?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  module    String
+  key       String
+  value     String
+  dataType  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, module, key])
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  module      String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  roles RolePermission[]
+
+  @@unique([module, action])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@unique([tenantId, name])
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+model RolePermission {
+  id           String   @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model BackgroundJob {
+  id           String   @id @default(cuid())
+  tenantId     String?
+  jobType      String
+  status       String
+  priority     Int      @default(0)
+  payload      String?
+  result       String?
+  error        String?
+  attempts     Int      @default(0)
+  maxAttempts  Int      @default(3)
+  nextRetry    DateTime?
+  scheduledFor DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String?
+
+  tenant         Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdByUser  User?   @relation("BackgroundJobCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([status, priority, createdAt])
 }
 ${authServerSettingsModel}
 `;
@@ -2154,6 +2865,83 @@ CREATE TABLE IF NOT EXISTS membership (
   environment_id TEXT,
   created_at TEXT NOT NULL,
   UNIQUE (tenant_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT,
+  trace_id TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS setting (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT,
+  module TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  data_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tenant_id, module, key)
+);
+
+CREATE TABLE IF NOT EXISTS permission (
+  id TEXT PRIMARY KEY,
+  module TEXT NOT NULL,
+  action TEXT NOT NULL,
+  description TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (module, action)
+);
+
+CREATE TABLE IF NOT EXISTS role_definition (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tenant_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS user_role (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, role_id)
+);
+
+CREATE TABLE IF NOT EXISTS role_permission (
+  id TEXT PRIMARY KEY,
+  role_id TEXT NOT NULL,
+  permission_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (role_id, permission_id)
+);
+
+CREATE TABLE IF NOT EXISTS background_job (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT,
+  job_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 0,
+  payload TEXT,
+  result TEXT,
+  error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  next_retry TEXT,
+  scheduled_for TEXT,
+  completed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  created_by TEXT
 );${authServerMigration}
 `;
 }
@@ -2269,9 +3057,7 @@ function portalLoginRoute(): string {
 }
 
 function portalAppLayout(options: InitScaffoldOptions): string {
-  const settingsNav = options.authServer
-    ? "{ href: '/settings', label: 'Settings' }, { href: '/settings/theme', label: 'Theme' }, { href: '/settings/auth-server', label: 'Auth Server' }"
-    : "{ href: '/settings', label: 'Settings' }, { href: '/settings/theme', label: 'Theme' }";
+  const settingsAuthItem = options.authServer ? "{ href: '/settings/auth-server', label: 'Auth Server' }," : '';
 
   return `import { Outlet, NavLink } from 'react-router';
 import { useEffect } from 'react';
@@ -2295,26 +3081,52 @@ export default function AppLayout() {
           <span style={{ fontWeight: 700, color: 'var(--hf-primary)' }}>HubForge Portal</span>
         </div>
         <nav style={{ padding: '0.75rem 0.5rem', flex: 1, overflowY: 'auto' }}>
-          {[{ href: '/dashboard', label: 'Dashboard' }, ${settingsNav}, { href: '/docs', label: 'API Docs' }].map(
-            ({ href, label }) => (
-              <NavLink
-                key={href}
-                to={href}
-                style={({ isActive }) => ({
-                  display: 'block',
-                  padding: '8px 12px',
-                  borderRadius: 8,
-                  fontSize: '0.875rem',
-                  textDecoration: 'none',
-                  marginBottom: 4,
-                  color: isActive ? 'var(--hf-sidebar-active-text)' : 'var(--hf-sidebar-text)',
-                  background: isActive ? 'var(--hf-sidebar-active)' : 'transparent',
-                })}
-              >
-                {label}
-              </NavLink>
-            ),
-          )}
+          {[
+            {
+              title: 'Operations',
+              items: [
+                { href: '/dashboard', label: 'Dashboard' },
+                { href: '/users', label: 'Users' },
+                { href: '/roles', label: 'Roles' },
+                { href: '/jobs', label: 'Background Jobs' },
+              ],
+            },
+            {
+              title: 'Platform',
+              items: [
+                { href: '/audit-log', label: 'Audit Log' },
+                { href: '/settings', label: 'Settings' },
+                { href: '/settings/email-account', label: 'Email Account' },
+                { href: '/settings/theme', label: 'Theme' },
+                ${settingsAuthItem}
+                { href: '/docs', label: 'API Docs' },
+              ],
+            },
+          ].map((group) => (
+            <div key={group.title} style={{ marginBottom: '0.85rem' }}>
+              <p style={{ margin: '0 0 0.35rem', padding: '0 0.45rem', fontSize: '0.68rem', color: 'var(--hf-muted)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                {group.title}
+              </p>
+              {group.items.map(({ href, label }) => (
+                <NavLink
+                  key={href}
+                  to={href}
+                  style={({ isActive }) => ({
+                    display: 'block',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    fontSize: '0.875rem',
+                    textDecoration: 'none',
+                    marginBottom: 4,
+                    color: isActive ? 'var(--hf-sidebar-active-text)' : 'var(--hf-sidebar-text)',
+                    background: isActive ? 'var(--hf-sidebar-active)' : 'transparent',
+                  })}
+                >
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          ))}
         </nav>
         <div style={{ padding: '1rem', borderTop: '1px solid var(--hf-border)' }}>
           <button
@@ -2358,9 +3170,21 @@ export default function SettingsIndexPage() {
         Configure authentication and platform behavior after logging in with database credentials.
       </p>
       <div style={{ display: 'grid', gap: '0.75rem', maxWidth: 620 }}>
+        <Link to="/users" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Users & Roles</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Manage users, roles, and permission assignments for this tenant.</p>
+        </Link>
+        <Link to="/jobs" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Background Jobs</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Monitor queued work and trigger jobs directly from admin.</p>
+        </Link>
         <Link to="/settings/theme" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
           <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Theme</p>
           <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Switch built-in admin themes or load a third-party CSS theme URL.</p>
+        </Link>
+        <Link to="/settings/email-account" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Email Account</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Configure SMTP account settings for outbound email notifications.</p>
         </Link>
 ${authServerLink}
       </div>
@@ -2508,6 +3332,246 @@ function portalDashboardRoute(): string {
 `;
 }
 
+function portalUsersRoute(): string {
+  return `import { useEffect, useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type UserRecord = { id: string; email: string; name: string | null };
+
+export default function UsersPage() {
+  const [users, setUsers] = useState<UserRecord[]>([]);
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+
+  async function load() {
+    const token = localStorage.getItem('token') ?? '';
+    const res = await fetch(API + '/v1/users', { headers: { authorization: 'Bearer ' + token } });
+    if (!res.ok) return;
+    const data = (await res.json()) as UserRecord[];
+    setUsers(data);
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function createUser() {
+    const token = localStorage.getItem('token') ?? '';
+    const res = await fetch(API + '/v1/users', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+      body: JSON.stringify({ email, name }),
+    });
+    if (res.ok) {
+      setEmail('');
+      setName('');
+      await load();
+    }
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Users</h2>
+      <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: '2fr 2fr auto', marginBottom: '1rem', maxWidth: 760 }}>
+        <input value={email} onChange={(e) => setEmail(e.currentTarget.value)} placeholder="Email" style={inputStyle} />
+        <input value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Name" style={inputStyle} />
+        <button onClick={createUser} style={buttonStyle}>Add User</button>
+      </div>
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
+        {users.map((u) => (
+          <div key={u.id} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #f1f5f9' }}>
+            <p style={{ margin: 0, fontWeight: 600 }}>{u.name ?? '(no name)'}</p>
+            <p style={{ margin: '0.15rem 0 0', color: '#64748b', fontSize: '0.88rem' }}>{u.email}</p>
+          </div>
+        ))}
+        {users.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No users yet.</p>}
+      </div>
+    </div>
+  );
+}
+
+const inputStyle = {
+  border: '1px solid #d1d5db',
+  borderRadius: 8,
+  padding: '8px 10px',
+};
+
+const buttonStyle = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#2563eb',
+  color: '#fff',
+  cursor: 'pointer',
+};
+`;
+}
+
+function portalRolesRoute(): string {
+  return `import { useEffect, useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type RoleRecord = { id: string; name: string; description: string | null };
+
+export default function RolesPage() {
+  const [roles, setRoles] = useState<RoleRecord[]>([]);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+
+  async function load() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const res = await fetch(API + '/v1/roles', {
+      headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as RoleRecord[];
+    setRoles(data);
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function createRole() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const res = await fetch(API + '/v1/roles', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+      body: JSON.stringify({ name, description }),
+    });
+    if (res.ok) {
+      setName('');
+      setDescription('');
+      await load();
+    }
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Roles</h2>
+      <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: '2fr 3fr auto', marginBottom: '1rem', maxWidth: 900 }}>
+        <input value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Role name" style={inputStyle} />
+        <input value={description} onChange={(e) => setDescription(e.currentTarget.value)} placeholder="Description" style={inputStyle} />
+        <button onClick={createRole} style={buttonStyle}>Add Role</button>
+      </div>
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
+        {roles.map((r) => (
+          <div key={r.id} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #f1f5f9' }}>
+            <p style={{ margin: 0, fontWeight: 600 }}>{r.name}</p>
+            <p style={{ margin: '0.15rem 0 0', color: '#64748b', fontSize: '0.88rem' }}>{r.description ?? 'No description'}</p>
+          </div>
+        ))}
+        {roles.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No roles yet.</p>}
+      </div>
+    </div>
+  );
+}
+
+const inputStyle = {
+  border: '1px solid #d1d5db',
+  borderRadius: 8,
+  padding: '8px 10px',
+};
+
+const buttonStyle = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#2563eb',
+  color: '#fff',
+  cursor: 'pointer',
+};
+`;
+}
+
+function portalJobsRoute(): string {
+  return `import { useEffect, useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type JobRecord = {
+  id: string;
+  jobType: string;
+  status: string;
+  attempts: number;
+  createdAt: string;
+};
+
+export default function JobsPage() {
+  const [jobs, setJobs] = useState<JobRecord[]>([]);
+  const [jobType, setJobType] = useState('demo.sync');
+
+  async function load() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const res = await fetch(API + '/v1/jobs', {
+      headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as JobRecord[];
+    setJobs(data);
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function triggerJob() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const res = await fetch(API + '/v1/jobs/' + encodeURIComponent(jobType) + '/trigger', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+      body: JSON.stringify({ payload: { source: 'portal' }, priority: 1 }),
+    });
+    if (res.ok) {
+      await load();
+    }
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Background Jobs</h2>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', maxWidth: 560 }}>
+        <input value={jobType} onChange={(e) => setJobType(e.currentTarget.value)} placeholder="job type" style={{ ...inputStyle, flex: 1 }} />
+        <button onClick={triggerJob} style={buttonStyle}>Trigger Job</button>
+      </div>
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
+        {jobs.map((j) => (
+          <div key={j.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 1.5fr', gap: '0.5rem', padding: '0.7rem 1rem', borderBottom: '1px solid #f1f5f9' }}>
+            <span style={{ fontWeight: 600 }}>{j.jobType}</span>
+            <span>{j.status}</span>
+            <span>{j.attempts}</span>
+            <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{new Date(j.createdAt).toLocaleString()}</span>
+          </div>
+        ))}
+        {jobs.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No jobs queued yet.</p>}
+      </div>
+    </div>
+  );
+}
+
+const inputStyle = {
+  border: '1px solid #d1d5db',
+  borderRadius: 8,
+  padding: '8px 10px',
+};
+
+const buttonStyle = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#2563eb',
+  color: '#fff',
+  cursor: 'pointer',
+};
+`;
+}
+
 function portalDocsRoute(): string {
   return [
     "import { useState, useEffect } from 'react';",
@@ -2546,8 +3610,71 @@ function portalDocsRoute(): string {
   ].join('\n') + '\n';
 }
 
+function portalExampleThemeAdapterCss(): string {
+  return `/**
+ * Example ThemeForest Adapter for HubForge
+ * ==========================================
+ * 1. Download your ThemeForest theme and extract the compiled CSS file.
+ * 2. Copy it into this folder alongside a new adapter file.
+ * 3. @import it below and override HubForge's --hf-* variables.
+ * 4. Register the adapter in apps/portal/app/lib/theme-registry.ts.
+ *
+ * See docs/ThemeForest-Integration.md for full step-by-step instructions.
+ */
+
+/* @import './vuexy/app.min.css'; */
+
+:root {
+  /* --hf-primary:             #7367f0; */
+  /* --hf-primary-hover:       #6259cc; */
+  /* --hf-surface:             #fff; */
+  /* --hf-surface-alt:         #f8f8f8; */
+  /* --hf-foreground:          #6e6b7b; */
+  /* --hf-muted:               #a8aaae; */
+  /* --hf-border:              #ebe9f1; */
+  /* --hf-sidebar:             #fff; */
+  /* --hf-sidebar-text:        #625f6e; */
+  /* --hf-sidebar-active:      #f0eeff; */
+  /* --hf-sidebar-active-text: #7367f0; */
+  /* --hf-header:              #fff; */
+  /* --hf-font:                'Montserrat', ui-sans-serif, sans-serif; */
+}
+`;
+}
+
+function portalThemeRegistryTs(): string {
+  return `export type CustomTheme = {
+  key: string;
+  name: string;
+  cssUrl: string;
+  tokens?: Record<string, string>;
+};
+
+/**
+ * Register your custom / ThemeForest themes here.
+ * Local CSS files: place in apps/portal/public/themes/ then reference as '/themes/my-theme.css'.
+ * See docs/ThemeForest-Integration.md for full instructions.
+ */
+export const CUSTOM_THEMES: CustomTheme[] = [
+  // {
+  //   key: 'vuexy',
+  //   name: 'Vuexy Admin',
+  //   cssUrl: '/themes/vuexy-adapter.css',
+  //   tokens: {
+  //     '--hf-primary': '#7367f0',
+  //     '--hf-primary-hover': '#6259cc',
+  //   },
+  // },
+];
+`;
+}
+
 function portalThemeLibTs(): string {
-  return `export type ThemePreset = 'ynex-light' | 'slate' | 'forest';
+  return `import { CUSTOM_THEMES, type CustomTheme } from './theme-registry.js';
+
+export type { CustomTheme };
+
+export type ThemePreset = 'ynex-light' | 'slate' | 'forest';
 
 const PRESETS: Record<ThemePreset, Record<string, string>> = {
   'ynex-light': {
@@ -2594,11 +3721,30 @@ const PRESETS: Record<ThemePreset, Record<string, string>> = {
   },
 };
 
+export function getCustomThemes(): CustomTheme[] {
+  return CUSTOM_THEMES;
+}
+
+export function applyCustomTheme(themeKey: string): void {
+  if (typeof document === 'undefined') return;
+  const theme = CUSTOM_THEMES.find((t) => t.key === themeKey);
+  if (!theme) return;
+  applyPortalTheme('ynex-light', theme.cssUrl);
+  if (theme.tokens) {
+    const root = document.documentElement;
+    Object.entries(theme.tokens).forEach(([key, value]) => root.style.setProperty(key, value));
+  }
+  localStorage.setItem('hf_custom_theme_key', themeKey);
+  localStorage.removeItem('hf_theme_preset');
+}
+
 export function applyStoredPortalTheme(): void {
-  if (typeof document === 'undefined') {
+  if (typeof document === 'undefined') return;
+  const customKey = localStorage.getItem('hf_custom_theme_key');
+  if (customKey) {
+    applyCustomTheme(customKey);
     return;
   }
-
   const preset = (localStorage.getItem('hf_theme_preset') as ThemePreset | null) ?? 'ynex-light';
   const customCssUrl = localStorage.getItem('hf_theme_css_url') ?? '';
   applyPortalTheme(preset, customCssUrl);
@@ -2640,47 +3786,351 @@ export function applyPortalTheme(preset: ThemePreset, customCssUrl?: string): vo
 function portalThemeSettingsRoute(): string {
   return `import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { applyPortalTheme, type ThemePreset } from '../lib/theme';
+import { applyPortalTheme, applyCustomTheme, getCustomThemes, type ThemePreset, type CustomTheme } from '../lib/theme';
 
-const presets: ThemePreset[] = ['ynex-light', 'slate', 'forest'];
+const builtinPresets: ThemePreset[] = ['ynex-light', 'slate', 'forest'];
+
+const presetLabels: Record<ThemePreset, string> = {
+  'ynex-light': '☀️ Ynex Light',
+  slate: '🌙 Slate Dark',
+  forest: '🌲 Forest',
+};
 
 export default function ThemeSettingsPage() {
-  const [preset, setPreset] = useState<ThemePreset>('ynex-light');
+  const [activeKey, setActiveKey] = useState<string>('ynex-light');
   const [cssUrl, setCssUrl] = useState('');
+  const [customThemes, setCustomThemes] = useState<CustomTheme[]>([]);
 
   useEffect(() => {
+    setCustomThemes(getCustomThemes());
+    const customKey = localStorage.getItem('hf_custom_theme_key');
+    if (customKey) {
+      setActiveKey('custom:' + customKey);
+      return;
+    }
     const storedPreset = (localStorage.getItem('hf_theme_preset') as ThemePreset | null) ?? 'ynex-light';
     const storedCssUrl = localStorage.getItem('hf_theme_css_url') ?? '';
-    setPreset(storedPreset);
+    setActiveKey(storedPreset);
     setCssUrl(storedCssUrl);
   }, []);
 
-  function save(e: FormEvent) {
+  function selectBuiltin(preset: ThemePreset) {
+    setActiveKey(preset);
+    localStorage.removeItem('hf_custom_theme_key');
+    applyPortalTheme(preset, '');
+    setCssUrl('');
+  }
+
+  function selectCustom(theme: CustomTheme) {
+    setActiveKey('custom:' + theme.key);
+    applyCustomTheme(theme.key);
+  }
+
+  function applyUrl(e: FormEvent) {
     e.preventDefault();
+    const preset = builtinPresets.includes(activeKey as ThemePreset) ? (activeKey as ThemePreset) : 'ynex-light';
+    localStorage.removeItem('hf_custom_theme_key');
     applyPortalTheme(preset, cssUrl);
   }
 
+  const cardBase: React.CSSProperties = {
+    border: '2px solid var(--hf-border)',
+    borderRadius: 10,
+    padding: '0.65rem 1rem',
+    cursor: 'pointer',
+    fontWeight: 500,
+    fontSize: '0.88rem',
+    background: 'var(--hf-surface)',
+    color: 'var(--hf-foreground)',
+    textAlign: 'left',
+    transition: 'border-color 0.15s',
+  };
+
+  const activeCard: React.CSSProperties = {
+    ...cardBase,
+    borderColor: 'var(--hf-primary)',
+    color: 'var(--hf-primary)',
+  };
+
   return (
-    <form onSubmit={save} style={{ maxWidth: 720, display: 'grid', gap: '0.75rem', background: 'var(--hf-surface)', border: '1px solid var(--hf-border)', borderRadius: 12, padding: '1rem' }}>
-      <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Portal Theme</h2>
-      <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.9rem' }}>
-        Pick a built-in admin theme or provide a third-party hosted CSS URL.
-      </p>
-      <label style={{ display: 'grid', gap: 6 }}>
-        <span style={{ fontSize: '0.85rem', color: 'var(--hf-muted)' }}>Theme preset</span>
-        <select value={preset} onChange={(e) => setPreset(e.currentTarget.value as ThemePreset)} style={{ border: '1px solid var(--hf-border)', borderRadius: 8, padding: '8px 10px' }}>
-          {presets.map((item) => <option key={item} value={item}>{item}</option>)}
-        </select>
-      </label>
-      <label style={{ display: 'grid', gap: 6 }}>
-        <span style={{ fontSize: '0.85rem', color: 'var(--hf-muted)' }}>Third-party theme CSS URL (optional)</span>
-        <input value={cssUrl} onChange={(e) => setCssUrl(e.currentTarget.value)} placeholder="https://example.com/admin-theme.css" style={{ border: '1px solid var(--hf-border)', borderRadius: 8, padding: '8px 10px' }} />
-      </label>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="submit" style={{ border: 'none', borderRadius: 8, background: 'var(--hf-primary)', color: '#fff', padding: '8px 14px', cursor: 'pointer' }}>Apply Theme</button>
-        <button type="button" onClick={() => { setCssUrl(''); applyPortalTheme(preset, ''); }} style={{ border: '1px solid var(--hf-border)', borderRadius: 8, background: 'transparent', color: 'var(--hf-foreground)', padding: '8px 14px', cursor: 'pointer' }}>Clear External CSS</button>
+    <div style={{ maxWidth: 760, display: 'grid', gap: '1.25rem' }}>
+      <div style={{ background: 'var(--hf-surface)', border: '1px solid var(--hf-border)', borderRadius: 12, padding: '1.25rem' }}>
+        <h2 style={{ margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 700 }}>Portal Theme</h2>
+        <p style={{ margin: '0 0 1rem', color: 'var(--hf-muted)', fontSize: '0.9rem' }}>
+          Choose a built-in preset, a registered custom theme, or load any external CSS stylesheet.
+        </p>
+
+        <p style={{ margin: '0 0 0.5rem', fontSize: '0.78rem', fontWeight: 700, color: 'var(--hf-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          Built-in Presets
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '1.25rem' }}>
+          {builtinPresets.map((preset) => (
+            <button key={preset} type="button" onClick={() => selectBuiltin(preset)}
+              style={activeKey === preset ? activeCard : cardBase}>
+              {presetLabels[preset]}
+            </button>
+          ))}
+        </div>
+
+        {customThemes.length > 0 && (
+          <>
+            <p style={{ margin: '0 0 0.5rem', fontSize: '0.78rem', fontWeight: 700, color: 'var(--hf-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Installed Themes
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '1.25rem' }}>
+              {customThemes.map((theme) => (
+                <button key={theme.key} type="button" onClick={() => selectCustom(theme)}
+                  style={activeKey === 'custom:' + theme.key ? activeCard : cardBase}>
+                  🎨 {theme.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {customThemes.length === 0 && (
+          <div style={{ background: 'var(--hf-surface-alt)', border: '1px dashed var(--hf-border)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem', color: 'var(--hf-muted)' }}>
+            <strong>No custom themes installed yet.</strong> Place a CSS adapter in <code>public/themes/</code> and register it in <code>app/lib/theme-registry.ts</code>.
+          </div>
+        )}
+
+        <form onSubmit={applyUrl}>
+          <p style={{ margin: '0 0 0.5rem', fontSize: '0.78rem', fontWeight: 700, color: 'var(--hf-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            External CSS URL (Advanced)
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={cssUrl} onChange={(e) => setCssUrl(e.currentTarget.value)}
+              placeholder="https://example.com/admin-theme.css"
+              style={{ flex: 1, border: '1px solid var(--hf-border)', borderRadius: 8, padding: '8px 10px', fontSize: '0.88rem' }} />
+            <button type="submit" style={{ border: 'none', borderRadius: 8, background: 'var(--hf-primary)', color: '#fff', padding: '8px 14px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              Apply URL
+            </button>
+            <button type="button"
+              onClick={() => { setCssUrl(''); applyPortalTheme('ynex-light', ''); localStorage.removeItem('hf_custom_theme_key'); }}
+              style={{ border: '1px solid var(--hf-border)', borderRadius: 8, background: 'transparent', color: 'var(--hf-foreground)', padding: '8px 14px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              Clear
+            </button>
+          </div>
+        </form>
       </div>
-    </form>
+    </div>
+  );
+}
+`;
+}
+
+function portalEmailAccountSettingsRoute(): string {
+  return `import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type EmailSettings = {
+  enabled: boolean;
+  fromEmail: string;
+  fromName: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPass: string;
+};
+
+const defaults: EmailSettings = {
+  enabled: false,
+  fromEmail: '',
+  fromName: 'HubForge Notifications',
+  smtpHost: 'localhost',
+  smtpPort: 1025,
+  smtpSecure: false,
+  smtpUser: '',
+  smtpPass: '',
+};
+
+export default function EmailAccountSettingsPage() {
+  const [settings, setSettings] = useState<EmailSettings>(defaults);
+  const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+    fetch(API + '/v1/settings/email-account', {
+      headers: { 'x-tenant-id': tenantId, authorization: 'Bearer ' + token },
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as Partial<EmailSettings>;
+        setSettings({ ...defaults, ...data });
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  function update<K extends keyof EmailSettings>(key: K, value: EmailSettings[K]) {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function save() {
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+    const res = await fetch(API + '/v1/settings/email-account', {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        'x-tenant-id': tenantId,
+        authorization: 'Bearer ' + token,
+      },
+      body: JSON.stringify(settings),
+    });
+    setMessage(res.ok ? 'Saved email account settings.' : 'Failed to save settings.');
+  }
+
+  if (loading) return <p style={{ color: 'var(--hf-muted)' }}>Loading...</p>;
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 0.75rem', color: 'var(--hf-foreground)' }}>Email Account Settings</h2>
+      <p style={{ color: 'var(--hf-muted)', marginTop: 0 }}>
+        Configure SMTP credentials used for outbound email notifications.
+      </p>
+
+      <div style={{ background: 'var(--hf-surface)', border: '1px solid var(--hf-border)', borderRadius: 12, padding: '1rem', display: 'grid', gap: '0.75rem' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={settings.enabled} onChange={(e) => update('enabled', e.currentTarget.checked)} />
+          Enable email delivery
+        </label>
+
+        <input value={settings.fromName} onChange={(e) => update('fromName', e.currentTarget.value)} placeholder="From name" style={inputStyle} />
+        <input value={settings.fromEmail} onChange={(e) => update('fromEmail', e.currentTarget.value)} placeholder="From email" style={inputStyle} />
+        <input value={settings.smtpHost} onChange={(e) => update('smtpHost', e.currentTarget.value)} placeholder="SMTP host" style={inputStyle} />
+        <input value={String(settings.smtpPort)} onChange={(e) => update('smtpPort', Number(e.currentTarget.value) || 0)} placeholder="SMTP port" style={inputStyle} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={settings.smtpSecure} onChange={(e) => update('smtpSecure', e.currentTarget.checked)} />
+          Use secure SMTP (TLS)
+        </label>
+        <input value={settings.smtpUser} onChange={(e) => update('smtpUser', e.currentTarget.value)} placeholder="SMTP username" style={inputStyle} />
+        <input value={settings.smtpPass} onChange={(e) => update('smtpPass', e.currentTarget.value)} placeholder="SMTP password" type="password" style={inputStyle} />
+
+        <button onClick={save} style={primaryButton}>Save Settings</button>
+        {message && <p style={{ margin: 0, color: 'var(--hf-muted)' }}>{message}</p>}
+      </div>
+    </div>
+  );
+}
+
+const inputStyle: CSSProperties = {
+  border: '1px solid var(--hf-border)',
+  borderRadius: 8,
+  padding: '8px 10px',
+  fontSize: '0.9rem',
+  background: 'var(--hf-surface)',
+  color: 'var(--hf-foreground)',
+};
+
+const primaryButton: CSSProperties = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 14px',
+  background: 'var(--hf-primary)',
+  color: '#fff',
+  cursor: 'pointer',
+};
+`;
+}
+
+function portalAuditLogRoute(): string {
+  return `import { useLoaderData } from 'react-router';
+import type { LoaderFunctionArgs } from 'react-router';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type AuditItem = {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  traceId: string | null;
+  createdAt: string;
+};
+
+export async function clientLoader({ request }: LoaderFunctionArgs) {
+  const page = new URL(request.url).searchParams.get('page') ?? '1';
+  const tenantId = typeof window !== 'undefined' ? (localStorage.getItem('tenantId') ?? '') : '';
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') ?? '') : '';
+
+  try {
+    const res = await fetch(API + '/v1/audit-log?page=' + page + '&limit=30', {
+      headers: { 'x-tenant-id': tenantId, authorization: 'Bearer ' + token },
+    });
+    if (!res.ok) {
+      return { items: [], total: 0, page: 1, limit: 30, error: 'API ' + res.status };
+    }
+    const data = (await res.json()) as { items: AuditItem[]; total: number; page: number; limit: number };
+    return { ...data, error: null };
+  } catch {
+    return { items: [], total: 0, page: 1, limit: 30, error: 'API unavailable' };
+  }
+}
+
+export default function AuditLogPage() {
+  const { items, error } = useLoaderData<typeof clientLoader>();
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 1rem', color: 'var(--hf-foreground)' }}>Audit Log</h2>
+      {error && <p style={{ color: '#dc2626', marginTop: 0 }}>⚠️ {error}</p>}
+      <div style={{ background: 'var(--hf-surface)', border: '1px solid var(--hf-border)', borderRadius: 12, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead style={{ background: 'var(--hf-surface-alt)' }}>
+            <tr>
+              {['Time', 'Action', 'Entity', 'Trace'].map((h) => (
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: '0.75rem', color: 'var(--hf-muted)', textTransform: 'uppercase' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 && (
+              <tr><td colSpan={4} style={{ padding: '1.25rem', color: 'var(--hf-muted)' }}>No audit events found.</td></tr>
+            )}
+            {items.map((row) => (
+              <tr key={row.id} style={{ borderTop: '1px solid var(--hf-border)' }}>
+                <td style={{ padding: '10px 14px', fontSize: '0.82rem' }}>{new Date(row.createdAt).toLocaleString()}</td>
+                <td style={{ padding: '10px 14px', fontWeight: 600 }}>{row.action}</td>
+                <td style={{ padding: '10px 14px' }}>{row.entityType}{row.entityId ? ':' + row.entityId : ''}</td>
+                <td style={{ padding: '10px 14px', color: 'var(--hf-muted)', fontFamily: 'monospace' }}>{row.traceId ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+`;
+}
+
+function portalNotFoundRoute(): string {
+  return `import { Link, isRouteErrorResponse, useRouteError } from 'react-router';
+
+export default function NotFoundRoute() {
+  const err = useRouteError();
+  const status = isRouteErrorResponse(err) ? err.status : 404;
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--hf-surface-alt)', padding: '1.5rem' }}>
+      <div style={{ width: '100%', maxWidth: 640, borderRadius: 18, border: '1px solid var(--hf-border)', background: 'var(--hf-surface)', padding: '2rem' }}>
+        <p style={{ margin: 0, color: 'var(--hf-primary)', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: '0.8rem' }}>HubForge</p>
+        <h1 style={{ margin: '0.5rem 0 0.25rem', fontSize: '2rem', color: 'var(--hf-foreground)' }}>{status === 404 ? 'Page not found' : 'Something went wrong'}</h1>
+        <p style={{ margin: '0 0 1.25rem', color: 'var(--hf-muted)' }}>
+          The page you requested does not exist or may have been moved.
+        </p>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Link to="/dashboard" style={{ textDecoration: 'none', borderRadius: 10, padding: '8px 14px', background: 'var(--hf-primary)', color: '#fff' }}>Go to dashboard</Link>
+          <Link to="/settings" style={{ textDecoration: 'none', borderRadius: 10, padding: '8px 14px', border: '1px solid var(--hf-border)', color: 'var(--hf-foreground)' }}>Open settings</Link>
+          <Link to="/docs" style={{ textDecoration: 'none', borderRadius: 10, padding: '8px 14px', border: '1px solid var(--hf-border)', color: 'var(--hf-foreground)' }}>API docs</Link>
+        </div>
+      </div>
+    </div>
   );
 }
 `;

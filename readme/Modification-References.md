@@ -6,6 +6,10 @@ This file tracks implementation changes made in this session.
 
 Implemented initial HubForge CLI foundation and added structured documentation tracking under `readme/`.
 
+Added next-phase production scaffolding in the full template generator: tenant-aware settings + RBAC + background job database models/services, API route templates, portal admin pages, and a dedicated `background-job` feature generator.
+
+Completed next phases for seeding and tenant-aware module generation, then applied the same behavior to the FieldOps sample workspace.
+
 ## Added files
 
 - `package.json`
@@ -42,6 +46,9 @@ Implemented initial HubForge CLI foundation and added structured documentation t
   - Expanded command help for auth options, template profiles, and new feature generators
 - `packages/hubforge-cli/src/commands/feature.ts`
   - Added new generators: `auth-flow`, `billing-module`, `notifications-module`, `ai-agent`
+  - Added `background-job` feature type (paired API trigger route + worker scaffold)
+  - Tenant module generator now creates module `seed.mjs` and patches `packages/db/scripts/seed-registry.mjs`
+  - Tenant module metadata now includes `tenantScoped: true`
 - `packages/hubforge-cli/src/template-packs/full-pack.ts`
   - Added baseline packages: `appstack`, `auth-client`, `sdk-server`
   - Added auth, billing, notification, webhook, email, and AI defaults in env scaffolding
@@ -64,6 +71,33 @@ Implemented initial HubForge CLI foundation and added structured documentation t
 - `packages/hubforge-cli/src/template-packs/full-pack.ts`
   - Added generated API CORS middleware baseline and interactive docs scaffolding (`/docs` + OpenAPI 3.1)
   - Added `/auth/*` + `/v1/auth/*` route compatibility for auth endpoints
+  - Added settings/RBAC/jobs route templates and server registration wiring
+  - Added DB service templates (`settings`, `permissions`, `jobs`) and exports
+  - Extended generated Prisma schema and baseline migration with settings, RBAC, and background job models
+  - Added portal admin templates for `/users`, `/roles`, and `/jobs` plus sidebar/settings navigation links
+  - Upgraded DB seed script with default permissions, admin role assignment, and tenant settings seed data
+  - Added DB seed registry scaffold (`packages/db/scripts/seed-registry.mjs`)
+  - Updated generated DB seed script to run registered module seeders
+
+## FieldOps sample workspace sync
+
+- `packages/db/scripts/seed.mjs`
+  - Added module seeding invocation via `runModuleSeeders(...)`
+- `packages/db/scripts/seed-registry.mjs`
+  - Added centralized module seeder registry for sample modules
+- `packages/modules/*/seed.mjs`
+  - Added module seed hooks for `audit-log`, `customer-portal`, `dispatch-board`, `inventory`, and `reporting-dashboard`
+- `packages/modules/*/src/index.ts`
+  - Added `tenantScoped: true` to module metadata entries
+- `packages/workflows/src/modules.ts`
+  - Expanded `TenantModule` type with optional `tenantScoped`
+
+Validation rerun in FieldOps workspace:
+
+- `pnpm --filter @hubforge/db db:seed` passed
+- `pnpm --filter @hubforge/api typecheck` passed
+- `pnpm --filter @hubforge/portal typecheck` passed
+- `pnpm --filter @hubforge/db typecheck` passed
   - Fixed generated middleware allowlist to keep `/v1/auth/login|register|me|provider` and `/v1/tenancy/context` public
   - Fixed generated Postgres bootstrap script escaping for `SHADOW_DATABASE_URL` pathname normalization
   - Fixed generated DB seed script Prisma import style for ESM/CJS compatibility (`import prismaPkg ...` + destructure)
