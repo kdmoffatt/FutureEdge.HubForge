@@ -67,9 +67,11 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.jobs._index.tsx'), portalJobsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.assistant._index.tsx'), portalAssistantRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.notifications._index.tsx'), portalNotificationsRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.profile._index.tsx'), portalProfileRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.audit-log._index.tsx'), portalAuditLogRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.docs._index.tsx'), portalDocsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings._index.tsx'), portalSettingsIndexRoute(options));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.modules._index.tsx'), portalModulesRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.email-account._index.tsx'), portalEmailAccountSettingsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.theme._index.tsx'), portalThemeSettingsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '$.tsx'), portalNotFoundRoute());
@@ -2981,6 +2983,7 @@ function uiPackageJson(): string {
     },
     dependencies: {
       '@hubforge/api-client': 'workspace:*',
+      '@hubforge/appstack': 'workspace:*',
       '@react-router/node': '^7.0.0',
       '@react-router/serve': '^7.0.0',
       isbot: '^4.0.0',
@@ -3421,11 +3424,58 @@ function appstackIndexTs(): string {
   description: string;
 };
 
+export type PortalMenuItem = {
+  id: string;
+  label: string;
+  route: string;
+  icon?: string;
+  permissions?: string[];
+  moduleId?: string;
+  children?: PortalMenuItem[];
+};
+
+export type PortalMenuSection = {
+  id: string;
+  label: string;
+  children: PortalMenuItem[];
+};
+
 export const coreCapabilities: AppCapability[] = [
   { id: 'api-routing', description: 'API routing and middleware baseline' },
   { id: 'tenant-awareness', description: 'Tenant context resolution baseline' },
   { id: 'observability', description: 'Request logging, tracing headers, and health checks' },
 ];
+
+export function getPortalMenuSections(authServerEnabled = false): PortalMenuSection[] {
+  return [
+    {
+      id: 'operations',
+      label: 'Operations',
+      children: [
+        { id: 'dashboard', label: 'Dashboard', route: '/dashboard' },
+        { id: 'users', label: 'Users', route: '/users', permissions: ['users:read'] },
+        { id: 'roles', label: 'Roles', route: '/roles', permissions: ['roles:read'] },
+        { id: 'permissions', label: 'Permissions', route: '/permissions', permissions: ['roles:manage'] },
+        { id: 'assistant', label: 'AI Assistant', route: '/assistant', permissions: ['ai-assistant:read'] },
+        { id: 'jobs', label: 'Background Jobs', route: '/jobs', permissions: ['jobs:read'] },
+        { id: 'notifications', label: 'Notifications', route: '/notifications', permissions: ['notifications:read'] },
+      ],
+    },
+    {
+      id: 'platform',
+      label: 'Platform',
+      children: [
+        { id: 'audit-log', label: 'Audit Log', route: '/audit-log' },
+        { id: 'modules', label: 'Modules', route: '/settings/modules', moduleId: 'modules' },
+        { id: 'settings', label: 'Settings', route: '/settings' },
+        { id: 'email-account', label: 'Email Account', route: '/settings/email-account' },
+        { id: 'theme', label: 'Theme', route: '/settings/theme' },
+        ...(authServerEnabled ? [{ id: 'auth-server', label: 'Auth Server', route: '/settings/auth-server' }] : []),
+        { id: 'docs', label: 'API Docs', route: '/docs' },
+      ],
+    },
+  ];
+}
 `;
 }
 
@@ -5331,131 +5381,233 @@ function portalLoginRoute(): string {
 }
 
 function portalAppLayout(options: InitScaffoldOptions): string {
-  const settingsAuthItem = options.authServer ? "{ href: '/settings/auth-server', label: 'Auth Server' }," : '';
+  const authServerEnabled = options.authServer ? 'true' : 'false';
 
-  return `import { Outlet, NavLink } from 'react-router';
-import { useEffect } from 'react';
-import type { LoaderFunctionArgs } from 'react-router';
-import { applyStoredPortalTheme } from '../lib/theme';
+  return `import { Outlet, NavLink, useNavigate } from 'react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { getPortalMenuSections } from '@hubforge/appstack';
+import { applyPortalTheme, applyStoredPortalTheme } from '../lib/theme';
 
-export async function clientLoader({ request }: LoaderFunctionArgs) {
-  const url = new URL(request.url);
-  return { pathname: url.pathname };
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+const AUTH_SERVER_ENABLED = ${authServerEnabled};
+
+type Membership = { tenantId: string; role: string; tenant?: { name?: string | null } | null };
+type MeResponse = { user?: { name?: string | null; email?: string | null } | null; memberships?: Membership[] };
+type NotificationDelivery = { id: string; status: string; subject?: string | null; createdAt?: string };
+
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'U';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
 export default function AppLayout() {
+  const navigate = useNavigate();
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [language, setLanguage] = useState<'en' | 'es'>('en');
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
+  const [me, setMe] = useState<MeResponse>({});
+  const [deliveries, setDeliveries] = useState<NotificationDelivery[]>([]);
+
+  const sections = useMemo(() => getPortalMenuSections(AUTH_SERVER_ENABLED), []);
+
   useEffect(() => {
     applyStoredPortalTheme();
+    const rawCollapse = localStorage.getItem('hf_nav_collapsed');
+    if (rawCollapse) {
+      try {
+        setCollapsed(JSON.parse(rawCollapse) as Record<string, boolean>);
+      } catch {
+        setCollapsed({});
+      }
+    }
+
+    const storedLang = (localStorage.getItem('hf_lang') as 'en' | 'es' | null) ?? 'en';
+    setLanguage(storedLang);
+
+    const preset = (localStorage.getItem('hf_theme_preset') ?? 'ynex-light') as string;
+    setThemeMode(preset === 'slate' ? 'dark' : 'light');
+
+    void loadUserMenuData();
   }, []);
 
-  const iconByLabel: Record<string, string> = {
-    Dashboard: 'M3 13.5h8v7H3v-7zm10 0h8v7h-8v-7zM3 3.5h8v8H3v-8zm10 0h8v4h-8v-4z',
-    Users: 'M8 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm8 0a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM3 20a5 5 0 0 1 10 0H3zm10 0a4 4 0 0 1 8 0h-8z',
-    Roles: 'M12 3l8 4v5c0 5.5-3.6 8.5-8 9.8C7.6 20.5 4 17.5 4 12V7l8-4zm0 5a3 3 0 0 0-3 3c0 1.3.8 2.4 2 2.8V16h2v-2.2a3 3 0 0 0-1-5.8z',
-    Permissions: 'M4 4h16v5H4V4zm0 7.5h10v8H4v-8zm12 1h4v7h-4v-7z',
-    'Background Jobs': 'M12 6V3L8 7l4 4V8a4 4 0 1 1-4 4H6a6 6 0 1 0 6-6z',
-    'AI Assistant': 'M12 3a8.5 8.5 0 0 0-8.5 8.5v3l-1.5 2v1h20v-1l-1.5-2v-3A8.5 8.5 0 0 0 12 3zm-3 7h2v2H9v-2zm4 0h2v2h-2v-2zm-4 5h6v2H9v-2z',
-    Notifications: 'M12 22a2.2 2.2 0 0 0 2.2-2.2h-4.4A2.2 2.2 0 0 0 12 22zm7-6V11a7 7 0 1 0-14 0v5l-2 2v1h18v-1l-2-2z',
-    'Audit Log': 'M6 3h9l5 5v13H6V3zm8 1.5V9h4.5M9 13h8M9 17h8',
-    Settings: 'M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.6-2-3.4-2.4 1a7.7 7.7 0 0 0-1.8-1L15 3h-6l-.4 3a7.7 7.7 0 0 0-1.8 1l-2.4-1-2 3.4L4.6 11a7.8 7.8 0 0 0 .1 2l-2.2 1.6 2 3.4 2.4-1a7.7 7.7 0 0 0 1.8 1L9 21h6l.4-3a7.7 7.7 0 0 0 1.8-1l2.4 1 2-3.4L19.4 13zM12 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z',
-    'Email Account': 'M3 6h18v12H3V6zm2 2v.4l7 4.2 7-4.2V8l-7 4.2L5 8z',
-    Theme: 'M12 3a9 9 0 1 0 9 9h-9V3z',
-    'Auth Server': 'M4 6h16v12H4V6zm2 2v8h12V8H6zm5 2h2v4h-2v-4z',
-    'API Docs': 'M6 4h12a2 2 0 0 1 2 2v14l-4-2-4 2-4-2-4 2V6a2 2 0 0 1 2-2z',
-  };
+  async function loadUserMenuData() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+
+    const meRes = await fetch(API + '/v1/auth/me', {
+      headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+    });
+    if (meRes.ok) {
+      setMe((await meRes.json()) as MeResponse);
+    }
+
+    const notifRes = await fetch(API + '/v1/notifications/deliveries?limit=8', {
+      headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+    });
+    if (notifRes.ok) {
+      setDeliveries((await notifRes.json()) as NotificationDelivery[]);
+    }
+  }
+
+  function toggleSection(sectionId: string) {
+    const next = { ...collapsed, [sectionId]: !collapsed[sectionId] };
+    setCollapsed(next);
+    localStorage.setItem('hf_nav_collapsed', JSON.stringify(next));
+  }
+
+  function changeLanguage(value: 'en' | 'es') {
+    setLanguage(value);
+    localStorage.setItem('hf_lang', value);
+  }
+
+  function toggleTheme() {
+    const next = themeMode === 'light' ? 'dark' : 'light';
+    setThemeMode(next);
+    applyPortalTheme(next === 'light' ? 'ynex-light' : 'slate');
+  }
+
+  function logout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('tenantId');
+    window.location.href = '/login';
+  }
+
+  const unreadCount = deliveries.filter((d) => d.status !== 'sent').length;
+  const displayName = me.user?.name?.trim() || me.user?.email?.trim() || 'User';
+  const avatarLabel = initialsFromName(displayName);
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--hf-surface-alt)', color: 'var(--hf-foreground)' }}>
-      <aside style={{ width: 268, background: 'var(--hf-sidebar)', borderRight: '1px solid rgba(148, 163, 184, 0.2)', display: 'flex', flexDirection: 'column', color: '#d7e1f0', boxShadow: 'inset -1px 0 0 rgba(255, 255, 255, 0.04)' }}>
+      <aside style={{ width: 276, background: 'var(--hf-sidebar)', borderRight: '1px solid rgba(148, 163, 184, 0.2)', display: 'flex', flexDirection: 'column', color: '#d7e1f0' }}>
         <div style={{ minHeight: 72, display: 'flex', alignItems: 'center', padding: '0 1.25rem', borderBottom: '1px solid rgba(148, 163, 184, 0.2)' }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 40%, #0ea5e9 100%)', boxShadow: '0 10px 22px rgba(14, 165, 233, 0.28)', marginRight: 10 }} />
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 40%, #0ea5e9 100%)', marginRight: 10 }} />
           <div>
-            <p style={{ margin: 0, fontWeight: 700, color: '#eff6ff', letterSpacing: '-0.02em' }}>HubForge</p>
+            <p style={{ margin: 0, fontWeight: 700, color: '#eff6ff' }}>HubForge</p>
             <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#9fb0cb', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Portal Workspace</p>
           </div>
         </div>
+
         <nav style={{ padding: '0.9rem 0.6rem', flex: 1, overflowY: 'auto' }}>
-          {[
-            {
-              title: 'Operations',
-              items: [
-                { href: '/dashboard', label: 'Dashboard' },
-                { href: '/users', label: 'Users' },
-                { href: '/roles', label: 'Roles' },
-                { href: '/permissions', label: 'Permissions' },
-                { href: '/assistant', label: 'AI Assistant' },
-                { href: '/jobs', label: 'Background Jobs' },
-                { href: '/notifications', label: 'Notifications' },
-              ],
-            },
-            {
-              title: 'Platform',
-              items: [
-                { href: '/audit-log', label: 'Audit Log' },
-                { href: '/settings', label: 'Settings' },
-                { href: '/settings/email-account', label: 'Email Account' },
-                { href: '/settings/theme', label: 'Theme' },
-                ${settingsAuthItem}
-                { href: '/docs', label: 'API Docs' },
-              ],
-            },
-          ].map((group) => (
-            <div key={group.title} style={{ marginBottom: '1rem' }}>
-              <p style={{ margin: '0 0 0.45rem', padding: '0 0.45rem', fontSize: '0.68rem', color: '#8fa2c0', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                {group.title}
-              </p>
-              {group.items.map(({ href, label }) => (
-                <NavLink
-                  key={href}
-                  to={href}
-                  style={({ isActive }) => ({
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '9px 11px',
-                    borderRadius: 11,
-                    fontSize: '0.875rem',
-                    textDecoration: 'none',
-                    marginBottom: 4.5,
-                    color: isActive ? 'var(--hf-sidebar-active-text)' : 'var(--hf-sidebar-text)',
-                    background: isActive ? 'var(--hf-sidebar-active)' : 'transparent',
-                    border: isActive ? '1px solid rgba(255, 255, 255, 0.24)' : '1px solid transparent',
-                    boxShadow: isActive ? '0 10px 24px rgba(15, 23, 42, 0.28)' : 'none',
-                    fontWeight: isActive ? 600 : 500,
-                  })}
+          {sections.map((section) => {
+            const isCollapsed = collapsed[section.id] === true;
+            return (
+              <div key={section.id} style={{ marginBottom: '0.95rem' }}>
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.id)}
+                  style={{ width: '100%', textAlign: 'left', margin: '0 0 0.45rem', padding: '0.25rem 0.45rem', fontSize: '0.68rem', color: '#8fa2c0', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
                 >
-                  <span style={{ display: 'inline-flex', width: 16, height: 16, opacity: 0.95 }}>
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
-                      <path d={iconByLabel[label] ?? 'M4 4h16v16H4z'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                  {label}
-                </NavLink>
-              ))}
-            </div>
-          ))}
+                  <span>{section.label}</span>
+                  <span>{isCollapsed ? '+' : '-'}</span>
+                </button>
+
+                {!isCollapsed && section.children.map((item) => (
+                  <NavLink
+                    key={item.id}
+                    to={item.route}
+                    style={({ isActive }) => ({
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '9px 11px',
+                      borderRadius: 11,
+                      fontSize: '0.875rem',
+                      textDecoration: 'none',
+                      marginBottom: 4.5,
+                      color: isActive ? 'var(--hf-sidebar-active-text)' : 'var(--hf-sidebar-text)',
+                      background: isActive ? 'var(--hf-sidebar-active)' : 'transparent',
+                      border: isActive ? '1px solid rgba(255, 255, 255, 0.24)' : '1px solid transparent',
+                      fontWeight: isActive ? 600 : 500,
+                    })}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            );
+          })}
         </nav>
+
         <div style={{ padding: '1rem', borderTop: '1px solid rgba(148, 163, 184, 0.2)' }}>
-          <button
-            onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('tenantId'); window.location.href = '/login'; }}
-            style={{ width: '100%', padding: '8px 10px', borderRadius: 10, background: 'rgba(15, 23, 42, 0.35)', border: '1px solid rgba(148, 163, 184, 0.24)', color: '#d6e0ee', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
-          >
-            Sign out
+          <button onClick={logout} style={{ width: '100%', padding: '8px 10px', borderRadius: 10, background: 'rgba(15, 23, 42, 0.35)', border: '1px solid rgba(148, 163, 184, 0.24)', color: '#d6e0ee', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+            Logout
           </button>
         </div>
       </aside>
+
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <header style={{ minHeight: 72, background: 'var(--hf-header)', borderBottom: '1px solid var(--hf-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 1.65rem', backdropFilter: 'blur(8px)' }}>
+        <header style={{ minHeight: 72, background: 'var(--hf-header)', borderBottom: '1px solid var(--hf-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 1.65rem', position: 'relative' }}>
           <div>
             <p style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--hf-muted)', fontWeight: 700 }}>Workspace</p>
-            <p style={{ margin: '2px 0 0', fontSize: '1.05rem', fontWeight: 700, letterSpacing: '-0.02em' }}>Control Center</p>
+            <p style={{ margin: '2px 0 0', fontSize: '1.05rem', fontWeight: 700 }}>Control Center</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', height: 28, padding: '0 10px', borderRadius: 999, fontSize: '0.75rem', fontWeight: 700, color: 'var(--hf-primary)', background: 'var(--hf-primary-soft)', border: '1px solid color-mix(in srgb, var(--hf-primary) 20%, transparent 80%)' }}>
-              Live
-            </span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setNotifOpen((v) => !v)}
+              style={{ position: 'relative', width: 34, height: 34, borderRadius: 10, border: '1px solid var(--hf-border)', background: 'var(--hf-surface)', cursor: 'pointer' }}
+              aria-label="Notifications"
+            >
+              🔔
+              {unreadCount > 0 ? (
+                <span style={{ position: 'absolute', top: -6, right: -6, minWidth: 18, height: 18, borderRadius: 999, background: '#dc2626', color: '#fff', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+                  {unreadCount}
+                </span>
+              ) : null}
+            </button>
+
+            {notifOpen ? (
+              <div style={{ position: 'absolute', top: 42, right: 120, width: 340, maxHeight: 360, overflow: 'auto', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', boxShadow: 'var(--hf-card-shadow)' }}>
+                <div style={{ padding: '0.75rem 0.9rem', borderBottom: '1px solid var(--hf-border)', fontWeight: 700 }}>Recent Notifications</div>
+                {deliveries.map((item) => (
+                  <div key={item.id} style={{ padding: '0.65rem 0.9rem', borderBottom: '1px solid var(--hf-border)' }}>
+                    <p style={{ margin: 0, fontWeight: 600 }}>{item.subject ?? 'Notification'}</p>
+                    <p style={{ margin: '0.2rem 0 0', color: 'var(--hf-muted)', fontSize: '0.8rem' }}>{item.status}</p>
+                  </div>
+                ))}
+                {deliveries.length === 0 ? <p style={{ margin: 0, padding: '0.85rem', color: 'var(--hf-muted)' }}>No notifications.</p> : null}
+                <button type="button" onClick={() => setDeliveries([])} style={{ margin: '0.75rem', width: 'calc(100% - 1.5rem)', border: '1px solid var(--hf-border)', borderRadius: 8, background: 'transparent', padding: '0.45rem', cursor: 'pointer' }}>
+                  Clear
+                </button>
+              </div>
+            ) : null}
+
+            <button type="button" onClick={() => setAccountOpen((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: '1px solid var(--hf-border)', borderRadius: 999, background: 'var(--hf-surface)', padding: '0.25rem 0.55rem', cursor: 'pointer' }}>
+              <span style={{ width: 28, height: 28, borderRadius: 999, background: 'var(--hf-primary-soft)', color: 'var(--hf-primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem' }}>{avatarLabel}</span>
+              <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>{displayName}</span>
+            </button>
+
+            {accountOpen ? (
+              <div style={{ position: 'absolute', top: 42, right: 0, width: 260, border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', boxShadow: 'var(--hf-card-shadow)' }}>
+                <button type="button" onClick={() => { setAccountOpen(false); navigate('/profile'); }} style={menuActionStyle}>Profile</button>
+                <div style={{ padding: '0.45rem 0.75rem', borderTop: '1px solid var(--hf-border)' }}>
+                  <p style={{ margin: '0 0 0.4rem', fontSize: '0.74rem', color: 'var(--hf-muted)', textTransform: 'uppercase' }}>Switch Tenant</p>
+                  <div style={{ display: 'grid', gap: '0.3rem' }}>
+                    {(me.memberships ?? []).map((m) => (
+                      <button key={m.tenantId} type="button" onClick={() => { localStorage.setItem('tenantId', m.tenantId); window.location.reload(); }} style={menuActionStyle}>
+                        {m.tenant?.name ?? m.tenantId}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ padding: '0.45rem 0.75rem', borderTop: '1px solid var(--hf-border)' }}>
+                  <label style={{ fontSize: '0.74rem', color: 'var(--hf-muted)', display: 'block', marginBottom: 4 }}>Language</label>
+                  <select value={language} onChange={(e) => changeLanguage(e.currentTarget.value as 'en' | 'es')} style={{ width: '100%', borderRadius: 8, padding: '0.35rem 0.5rem' }}>
+                    <option value="en">English</option>
+                    <option value="es">Español</option>
+                  </select>
+                </div>
+                <button type="button" onClick={toggleTheme} style={menuActionStyle}>Theme: {themeMode === 'light' ? 'Light' : 'Dark'}</button>
+                <button type="button" onClick={logout} style={{ ...menuActionStyle, color: '#b91c1c' }}>Logout</button>
+              </div>
+            ) : null}
           </div>
         </header>
+
         <main style={{ flex: 1, overflow: 'auto', padding: '1.65rem' }}>
           <Outlet />
         </main>
@@ -5463,6 +5615,16 @@ export default function AppLayout() {
     </div>
   );
 }
+
+const menuActionStyle = {
+  width: '100%',
+  textAlign: 'left' as const,
+  border: 'none',
+  background: 'transparent',
+  padding: '0.6rem 0.75rem',
+  cursor: 'pointer',
+  borderTop: '1px solid var(--hf-border)',
+};
 `;
 }
 
@@ -5489,6 +5651,14 @@ export default function SettingsIndexPage() {
           <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Users & Roles</p>
           <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Manage users, roles, and permission assignments for this tenant.</p>
         </Link>
+        <Link to="/profile" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Profile</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Edit your display profile and account-level preferences.</p>
+        </Link>
+        <Link to="/settings/modules" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Modules</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Enable or disable tenant modules from a single control page.</p>
+        </Link>
         <Link to="/jobs" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
           <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Background Jobs</p>
           <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Monitor queued work and trigger jobs directly from admin.</p>
@@ -5512,6 +5682,165 @@ export default function SettingsIndexPage() {
 ${authServerLink}
       </div>
     </div>
+  );
+}
+`;
+}
+
+function portalProfileRoute(): string {
+  return `import { useEffect, useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type ProfileForm = {
+  name: string;
+  email: string;
+  timezone: string;
+  locale: string;
+};
+
+export default function ProfilePage() {
+  const [form, setForm] = useState<ProfileForm>({ name: '', email: '', timezone: 'UTC', locale: 'en' });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+
+    fetch(API + '/v1/auth/me', {
+      headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as { user?: { name?: string | null; email?: string | null } | null };
+        setForm((current) => ({
+          ...current,
+          name: data.user?.name ?? '',
+          email: data.user?.email ?? '',
+          locale: (localStorage.getItem('hf_lang') ?? 'en') as string,
+        }));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setMessage(null);
+    localStorage.setItem('hf_lang', form.locale || 'en');
+    setTimeout(() => {
+      setMessage('Profile preferences saved locally.');
+      setSaving(false);
+    }, 300);
+  }
+
+  return (
+    <section style={{ maxWidth: 720 }}>
+      <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.4rem' }}>Profile</h2>
+      <p style={{ margin: '0 0 1rem', color: 'var(--hf-muted)' }}>Manage account preferences and language defaults.</p>
+      <div style={{ border: '1px solid var(--hf-border)', borderRadius: 14, background: 'var(--hf-surface)', padding: '1rem', display: 'grid', gap: '0.75rem' }}>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>Display name</span>
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.5rem 0.65rem' }} />
+        </label>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>Email</span>
+          <input value={form.email} onChange={(e) => setForm({ ...form, email: e.currentTarget.value })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.5rem 0.65rem' }} />
+        </label>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>Timezone</span>
+          <input value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.currentTarget.value })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.5rem 0.65rem' }} />
+        </label>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>Language</span>
+          <select value={form.locale} onChange={(e) => setForm({ ...form, locale: e.currentTarget.value })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.45rem 0.6rem' }}>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+          </select>
+        </label>
+        <button type="button" disabled={saving} onClick={save} style={{ width: 160, borderRadius: 8, border: '1px solid var(--hf-primary)', background: 'var(--hf-primary)', color: '#fff', padding: '0.5rem 0.75rem', cursor: 'pointer', fontWeight: 600 }}>
+          {saving ? 'Saving...' : 'Save Profile'}
+        </button>
+        {message ? <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.84rem' }}>{message}</p> : null}
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function portalModulesRoute(): string {
+  return `import { useEffect, useMemo, useState } from 'react';
+import { getPortalMenuSections } from '@hubforge/appstack';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+export default function ModulesSettingsPage() {
+  const menu = useMemo(() => getPortalMenuSections(true), []);
+  const moduleItems = useMemo(() => menu.flatMap((section) => section.children.filter((item) => item.moduleId || item.id === 'assistant' || item.id === 'notifications' || item.id === 'jobs')), [menu]);
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+    Promise.all(
+      moduleItems.map(async (item) => {
+        const key = 'modules.' + item.id + '.enabled';
+        const res = await fetch(API + '/v1/settings/' + encodeURIComponent(key), {
+          headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+        });
+        if (!res.ok) return [item.id, true] as const;
+        const data = (await res.json()) as { value?: boolean };
+        return [item.id, data.value !== false] as const;
+      }),
+    ).then((entries) => setEnabled(Object.fromEntries(entries)));
+  }, [moduleItems]);
+
+  async function toggleModule(id: string, value: boolean) {
+    setSavingKey(id);
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+    const key = 'modules.' + id + '.enabled';
+    await fetch(API + '/v1/settings/' + encodeURIComponent(key), {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + token,
+        'x-tenant-id': tenantId,
+      },
+      body: JSON.stringify({ value }),
+    });
+    setEnabled((current) => ({ ...current, [id]: value }));
+    setSavingKey(null);
+  }
+
+  return (
+    <section style={{ maxWidth: 820 }}>
+      <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.4rem' }}>Modules</h2>
+      <p style={{ margin: '0 0 1rem', color: 'var(--hf-muted)' }}>Enable and disable tenant modules without editing code.</p>
+      <div style={{ display: 'grid', gap: '0.7rem' }}>
+        {moduleItems.map((item) => {
+          const isEnabled = enabled[item.id] !== false;
+          return (
+            <div key={item.id} style={{ border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <p style={{ margin: '0 0 0.2rem', fontWeight: 700 }}>{item.label}</p>
+                <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.84rem' }}>{item.route}</p>
+              </div>
+              <button
+                type="button"
+                disabled={savingKey === item.id}
+                onClick={() => toggleModule(item.id, !isEnabled)}
+                style={{ borderRadius: 999, border: '1px solid var(--hf-border)', background: isEnabled ? 'var(--hf-primary)' : 'transparent', color: isEnabled ? '#fff' : 'var(--hf-foreground)', padding: '0.4rem 0.8rem', cursor: 'pointer', minWidth: 96 }}
+              >
+                {savingKey === item.id ? 'Saving...' : isEnabled ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 `;

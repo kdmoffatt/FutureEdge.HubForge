@@ -93,6 +93,7 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] CLI enhancements: `hubforge init --seed`, `hubforge db seed`, `--ai-provider`, `--ai-key`
 - [x] FieldOps regeneration/upgrade script to apply all new generated modules safely
 - [x] Existing-project authserver enable command (`hubforge authserver enable --target <path> [--force]`)
+- [x] 2026-04-27: Added foundation docs bundle for final completion pass (`docs/background-jobs.md`, `docs/i18n.md`, `docs/features/*`)
 
 ## Platform services checklist (latest scan)
 

@@ -27,6 +27,7 @@
 - [Package Structure](#package-structure)
 - [Monorepo Tooling](#monorepo-tooling)
 - [CLI Usage](#cli-usage)
+- [Feature Documentation](#feature-documentation)
 - [Getting Started for Contributors](#getting-started-for-contributors)
 - [Contribution Guide](#contribution-guide)
 - [Repository Layout](#repository-layout)
@@ -444,6 +445,23 @@ hubforge --help
 | `--ai` | `none` | `none`, `fastapi` |
 | `--auth` | `external` | `external`, `local` |
 | `--auth-provider` | `zitadel` | `zitadel`, `auth0`, `keycloak`, `custom` |
+
+---
+
+## Feature Documentation
+
+Detailed implementation and usage guides are available under `docs/`:
+
+- `docs/background-jobs.md`
+- `docs/i18n.md`
+- `docs/features/settings.md`
+- `docs/features/rbac.md`
+- `docs/features/notifications.md`
+- `docs/features/billing.md`
+- `docs/features/ai-assistant.md`
+- `docs/features/background-jobs.md`
+- `docs/features/modules.md`
+- `docs/features/email-and-auth-server-settings.md`
 
 ---
 
