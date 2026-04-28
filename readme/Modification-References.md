@@ -2,6 +2,28 @@
 
 This file tracks implementation changes made in this session.
 
+## Latest update (final completion implementation slice: menu/i18n/profile/modules)
+
+Delivered framework-level implementation updates in the full template generator:
+
+- API auth route template now includes:
+  - `GET /v1/auth/profile`
+  - `PUT /v1/auth/profile`
+  - `POST /v1/auth/switch-tenant`
+  - tenant preference persistence via `SettingsService` (`preferences.language`, `preferences.theme`, `preferences.timezone`)
+- Portal scaffold now includes:
+  - `app/lib/i18n.ts` (lightweight translation dictionary + hook)
+  - `app/lib/menu.ts` (centralized dynamic menu section/item config)
+  - `app/routes/_app.tsx` wired for i18n labels, collapsible sections, account menu, tenant switch API, notification panel
+  - `app/routes/_app.profile._index.tsx` profile form wired to `/v1/auth/profile`
+  - `app/routes/_app.settings.modules._index.tsx` module toggles wired to settings keys
+- Fixed template regressions discovered during FieldOps validation:
+  - Azure AI endpoint base normalization in generated API (`endsWith('/') ? slice(0, -1) : endpoint`)
+  - Assistant route default prompt string escaping
+  - Removed runtime dependency risk on `@hubforge/appstack` in portal routes by using generated local `app/lib/menu.ts`
+
+FieldOps validation run executed with force upgrade and migration/seed, and portal production build succeeded after fixes.
+
 ## Latest update (final completion docs foundation)
 
 Delivered documentation foundation requested by the final completion prompt for module/feature usage and background job authoring.

@@ -54,7 +54,9 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'root.tsx'), portalRootTsx());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes.ts'), rrRoutesTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'app.css'), tailwindCss());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'menu.ts'), portalMenuLibTs(options));
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'theme.ts'), portalThemeLibTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'i18n.ts'), portalI18nLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'theme-registry.ts'), portalThemeRegistryTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'public', 'themes', 'example-themeforest-adapter.css'), portalExampleThemeAdapterCss());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_index.tsx'), portalIndexRoute());
@@ -1317,7 +1319,7 @@ function apiAuthRouteTs(options: InitScaffoldOptions): string {
 
   return `import type { Hono } from 'hono';
 import { SignJWT, jwtVerify } from 'jose';
-import { prisma } from '@hubforge/db';
+import { prisma, SettingsService } from '@hubforge/db';
 
 const secret = new TextEncoder().encode(
   process.env['AUTH_LOCAL_JWT_SECRET'] ?? 'hubforge-local-dev-secret-change-me',
@@ -1338,6 +1340,46 @@ async function signToken(userId: string, email: string): Promise<string> {
     .setAudience(audience)
     .setExpirationTime('8h')
     .sign(secret);
+}
+
+type AuthenticatedContext = {
+  user: { id: string; email: string; name: string | null };
+  memberships: Array<{ tenantId: string; role: string; tenant?: { name: string | null } | null }>;
+};
+
+async function resolveAuthenticatedContext(c: any): Promise<AuthenticatedContext | null> {
+  const authz = c.req.header('authorization');
+  const token = authz?.startsWith('Bearer ') ? authz.slice(7) : null;
+  if (!token) return null;
+
+  try {
+    const { payload } = await jwtVerify(token, secret, { issuer, audience });
+    const user = await prisma.user.findUnique({ where: { id: payload['sub'] as string } });
+    if (!user) return null;
+    const memberships = await prisma.membership.findMany({ where: { userId: user.id }, include: { tenant: true } });
+    return {
+      user: { id: user.id, email: user.email, name: user.name },
+      memberships,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadPreferences(tenantId: string | null | undefined): Promise<{ language: string; theme: string; timezone: string }> {
+  if (!tenantId) {
+    return { language: 'en', theme: 'ynex-light', timezone: 'UTC' };
+  }
+
+  const language = await SettingsService.get(tenantId, 'preferences', 'language', 'en', { scope: 'tenant' });
+  const theme = await SettingsService.get(tenantId, 'preferences', 'theme', 'ynex-light', { scope: 'tenant' });
+  const timezone = await SettingsService.get(tenantId, 'preferences', 'timezone', 'UTC', { scope: 'tenant' });
+
+  return {
+    language: typeof language === 'string' ? language : 'en',
+    theme: typeof theme === 'string' ? theme : 'ynex-light',
+    timezone: typeof timezone === 'string' ? timezone : 'UTC',
+  };
 }
 
 export function registerAuthRoutes(app: Hono): void {
@@ -1396,22 +1438,236 @@ export function registerAuthRoutes(app: Hono): void {
   app.post('/v1/auth/login', loginHandler);
 
   const meHandler = async (c: any) => {
-    const authz = c.req.header('authorization');
-    const token = authz?.startsWith('Bearer ') ? authz.slice(7) : null;
-    if (!token) return c.json({ error: 'Unauthorized' }, 401);
-    try {
-      const { payload } = await jwtVerify(token, secret, { issuer, audience });
-      const user = await prisma.user.findUnique({ where: { id: payload['sub'] as string } });
-      if (!user) return c.json({ error: 'User not found' }, 404);
-      const memberships = await prisma.membership.findMany({ where: { userId: user.id }, include: { tenant: true } });
-      return c.json({ user: { id: user.id, email: user.email, name: user.name }, memberships });
-    } catch {
-      return c.json({ error: 'Invalid token' }, 401);
-    }
+    const auth = await resolveAuthenticatedContext(c);
+    if (!auth) return c.json({ error: 'Unauthorized' }, 401);
+    const tenantId = c.req.header('x-tenant-id') ?? auth.memberships[0]?.tenantId ?? null;
+    const preferences = await loadPreferences(tenantId);
+    return c.json({ user: auth.user, memberships: auth.memberships, preferences });
   };
+
+  app.get('/v1/auth/profile', async (c) => {
+    const auth = await resolveAuthenticatedContext(c);
+    if (!auth) return c.json({ error: 'Unauthorized' }, 401);
+    const tenantId = c.req.header('x-tenant-id') ?? auth.memberships[0]?.tenantId ?? null;
+    const preferences = await loadPreferences(tenantId);
+    return c.json({
+      profile: {
+        name: auth.user.name ?? '',
+        email: auth.user.email,
+        timezone: preferences.timezone,
+        language: preferences.language,
+        theme: preferences.theme,
+      },
+      memberships: auth.memberships,
+    });
+  });
+
+  app.put('/v1/auth/profile', async (c) => {
+    const auth = await resolveAuthenticatedContext(c);
+    if (!auth) return c.json({ error: 'Unauthorized' }, 401);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const updateData: { name?: string | null; email?: string } = {};
+
+    if (typeof body['name'] === 'string') {
+      updateData.name = body['name'].trim() || null;
+    }
+
+    if (typeof body['email'] === 'string' && body['email'].trim().length > 0 && body['email'] !== auth.user.email) {
+      const existing = await prisma.user.findUnique({ where: { email: body['email'] } });
+      if (existing && existing.id !== auth.user.id) {
+        return c.json({ error: 'Email already in use' }, 409);
+      }
+      updateData.email = body['email'];
+    }
+
+    const updated = Object.keys(updateData).length > 0
+      ? await prisma.user.update({ where: { id: auth.user.id }, data: updateData })
+      : await prisma.user.findUnique({ where: { id: auth.user.id } });
+
+    if (!updated) return c.json({ error: 'User not found' }, 404);
+
+    const tenantId = c.req.header('x-tenant-id') ?? auth.memberships[0]?.tenantId ?? null;
+    if (tenantId) {
+      if (typeof body['language'] === 'string') {
+        await SettingsService.set(tenantId, 'preferences', 'language', body['language'], { scope: 'tenant' });
+      }
+      if (typeof body['theme'] === 'string') {
+        await SettingsService.set(tenantId, 'preferences', 'theme', body['theme'], { scope: 'tenant' });
+      }
+      if (typeof body['timezone'] === 'string') {
+        await SettingsService.set(tenantId, 'preferences', 'timezone', body['timezone'], { scope: 'tenant' });
+      }
+    }
+
+    const preferences = await loadPreferences(tenantId);
+    return c.json({
+      profile: {
+        name: updated.name ?? '',
+        email: updated.email,
+        timezone: preferences.timezone,
+        language: preferences.language,
+        theme: preferences.theme,
+      },
+    });
+  });
+
+  app.post('/v1/auth/switch-tenant', async (c) => {
+    const auth = await resolveAuthenticatedContext(c);
+    if (!auth) return c.json({ error: 'Unauthorized' }, 401);
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const tenantId = typeof body['tenantId'] === 'string' ? body['tenantId'] : '';
+    if (!tenantId) return c.json({ error: 'tenantId is required' }, 400);
+    const allowed = auth.memberships.some((m) => m.tenantId === tenantId);
+    if (!allowed) return c.json({ error: 'Tenant access denied' }, 403);
+    return c.json({ success: true, tenantId });
+  });
 
   app.get('/auth/me', meHandler);
   app.get('/v1/auth/me', meHandler);
+}
+`;
+}
+
+function portalI18nLibTs(): string {
+  return `import { useEffect, useState } from 'react';
+
+export type PortalLanguage = 'en' | 'es';
+
+const STORAGE_KEY = 'hf_lang';
+const EVENT_NAME = 'hf-language-change';
+
+const dictionary: Record<PortalLanguage, Record<string, string>> = {
+  en: {
+    'workspace.label': 'Workspace',
+    'workspace.title': 'Control Center',
+    'nav.section.operations': 'Operations',
+    'nav.section.platform': 'Platform',
+    'nav.dashboard': 'Dashboard',
+    'nav.users': 'Users',
+    'nav.roles': 'Roles',
+    'nav.permissions': 'Permissions',
+    'nav.assistant': 'AI Assistant',
+    'nav.jobs': 'Background Jobs',
+    'nav.notifications': 'Notifications',
+    'nav.audit_log': 'Audit Log',
+    'nav.modules': 'Modules',
+    'nav.settings': 'Settings',
+    'nav.email_account': 'Email Account',
+    'nav.theme': 'Theme',
+    'nav.auth_server': 'Auth Server',
+    'nav.docs': 'API Docs',
+    'menu.profile': 'Profile',
+    'menu.switch_tenant': 'Switch Tenant',
+    'menu.language': 'Language',
+    'menu.theme.light': 'Theme: Light',
+    'menu.theme.dark': 'Theme: Dark',
+    'menu.logout': 'Logout',
+    'notifications.title': 'Recent Notifications',
+    'notifications.empty': 'No notifications.',
+    'notifications.clear': 'Clear',
+    'profile.title': 'Profile',
+    'profile.subtitle': 'Manage account preferences and language defaults.',
+    'profile.name': 'Display name',
+    'profile.email': 'Email',
+    'profile.timezone': 'Timezone',
+    'profile.language': 'Language',
+    'profile.save': 'Save Profile',
+    'profile.saving': 'Saving...',
+    'profile.saved': 'Profile saved.',
+    'modules.title': 'Modules',
+    'modules.subtitle': 'Enable and disable tenant modules without editing code.',
+    'modules.enabled': 'Enabled',
+    'modules.disabled': 'Disabled',
+    'common.saving': 'Saving...',
+  },
+  es: {
+    'workspace.label': 'Espacio de trabajo',
+    'workspace.title': 'Centro de control',
+    'nav.section.operations': 'Operaciones',
+    'nav.section.platform': 'Plataforma',
+    'nav.dashboard': 'Panel',
+    'nav.users': 'Usuarios',
+    'nav.roles': 'Roles',
+    'nav.permissions': 'Permisos',
+    'nav.assistant': 'Asistente IA',
+    'nav.jobs': 'Trabajos en segundo plano',
+    'nav.notifications': 'Notificaciones',
+    'nav.audit_log': 'Auditoria',
+    'nav.modules': 'Modulos',
+    'nav.settings': 'Configuracion',
+    'nav.email_account': 'Cuenta de correo',
+    'nav.theme': 'Tema',
+    'nav.auth_server': 'Servidor de autenticacion',
+    'nav.docs': 'Documentacion API',
+    'menu.profile': 'Perfil',
+    'menu.switch_tenant': 'Cambiar tenant',
+    'menu.language': 'Idioma',
+    'menu.theme.light': 'Tema: Claro',
+    'menu.theme.dark': 'Tema: Oscuro',
+    'menu.logout': 'Cerrar sesion',
+    'notifications.title': 'Notificaciones recientes',
+    'notifications.empty': 'No hay notificaciones.',
+    'notifications.clear': 'Limpiar',
+    'profile.title': 'Perfil',
+    'profile.subtitle': 'Administra preferencias de cuenta e idioma.',
+    'profile.name': 'Nombre visible',
+    'profile.email': 'Correo',
+    'profile.timezone': 'Zona horaria',
+    'profile.language': 'Idioma',
+    'profile.save': 'Guardar perfil',
+    'profile.saving': 'Guardando...',
+    'profile.saved': 'Perfil guardado.',
+    'modules.title': 'Modulos',
+    'modules.subtitle': 'Activa o desactiva modulos del tenant sin editar codigo.',
+    'modules.enabled': 'Activo',
+    'modules.disabled': 'Inactivo',
+    'common.saving': 'Guardando...',
+  },
+};
+
+export function getPortalLanguage(): PortalLanguage {
+  const raw = typeof localStorage === 'undefined' ? 'en' : localStorage.getItem(STORAGE_KEY);
+  return raw === 'es' ? 'es' : 'en';
+}
+
+export function setPortalLanguage(language: PortalLanguage): void {
+  localStorage.setItem(STORAGE_KEY, language);
+  window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: language }));
+}
+
+export function translate(language: PortalLanguage, key: string, fallback?: string): string {
+  return dictionary[language][key] ?? dictionary.en[key] ?? fallback ?? key;
+}
+
+export function useI18n() {
+  const [language, setLanguageState] = useState<PortalLanguage>(getPortalLanguage());
+
+  useEffect(() => {
+    const onStorage = () => setLanguageState(getPortalLanguage());
+    const onCustom = (event: Event) => {
+      const value = (event as CustomEvent<PortalLanguage>).detail;
+      setLanguageState(value === 'es' ? 'es' : 'en');
+    };
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener(EVENT_NAME, onCustom as EventListener);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(EVENT_NAME, onCustom as EventListener);
+    };
+  }, []);
+
+  function setLanguage(language: PortalLanguage) {
+    setPortalLanguage(language);
+    setLanguageState(language);
+  }
+
+  return {
+    language,
+    setLanguage,
+    t: (key: string, fallback?: string) => translate(language, key, fallback),
+  };
 }
 `;
 }
@@ -2046,7 +2302,7 @@ async function callAzureOpenAiJson(
   systemPrompt: string,
   userPrompt: string,
 ): Promise<unknown> {
-  const base = endpoint.replace(/\/$/, '');
+  const base = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
   const url = base + '/openai/deployments/' + encodeURIComponent(deployment) + '/chat/completions?api-version=' + encodeURIComponent(apiVersion);
   const res = await fetch(url, {
     method: 'POST',
@@ -2983,7 +3239,6 @@ function uiPackageJson(): string {
     },
     dependencies: {
       '@hubforge/api-client': 'workspace:*',
-      '@hubforge/appstack': 'workspace:*',
       '@react-router/node': '^7.0.0',
       '@react-router/serve': '^7.0.0',
       isbot: '^4.0.0',
@@ -5337,6 +5592,58 @@ export default function App() {
 `;
 }
 
+function portalMenuLibTs(options: InitScaffoldOptions): string {
+  const authServerEnabled = options.authServer ? 'true' : 'false';
+
+  return `export type PortalMenuItem = {
+  id: string;
+  label: string;
+  route: string;
+  permissions?: string[];
+  moduleId?: string;
+};
+
+export type PortalMenuSection = {
+  id: string;
+  label: string;
+  children: PortalMenuItem[];
+};
+
+const AUTH_SERVER_ENABLED = ${authServerEnabled};
+
+export function getPortalMenuSections(): PortalMenuSection[] {
+  return [
+    {
+      id: 'operations',
+      label: 'Operations',
+      children: [
+        { id: 'dashboard', label: 'Dashboard', route: '/dashboard' },
+        { id: 'users', label: 'Users', route: '/users', permissions: ['users:read'] },
+        { id: 'roles', label: 'Roles', route: '/roles', permissions: ['roles:read'] },
+        { id: 'permissions', label: 'Permissions', route: '/permissions', permissions: ['roles:manage'] },
+        { id: 'assistant', label: 'AI Assistant', route: '/assistant', permissions: ['ai-assistant:read'] },
+        { id: 'jobs', label: 'Background Jobs', route: '/jobs', permissions: ['jobs:read'] },
+        { id: 'notifications', label: 'Notifications', route: '/notifications', permissions: ['notifications:read'] },
+      ],
+    },
+    {
+      id: 'platform',
+      label: 'Platform',
+      children: [
+        { id: 'audit-log', label: 'Audit Log', route: '/audit-log' },
+        { id: 'modules', label: 'Modules', route: '/settings/modules', moduleId: 'modules' },
+        { id: 'settings', label: 'Settings', route: '/settings' },
+        { id: 'email-account', label: 'Email Account', route: '/settings/email-account' },
+        { id: 'theme', label: 'Theme', route: '/settings/theme' },
+        ...(AUTH_SERVER_ENABLED ? [{ id: 'auth-server', label: 'Auth Server', route: '/settings/auth-server' }] : []),
+        { id: 'docs', label: 'API Docs', route: '/docs' },
+      ],
+    },
+  ];
+}
+`;
+}
+
 function portalIndexRoute(): string {
   return `import { redirect } from 'react-router';
 
@@ -5381,15 +5688,15 @@ function portalLoginRoute(): string {
 }
 
 function portalAppLayout(options: InitScaffoldOptions): string {
-  const authServerEnabled = options.authServer ? 'true' : 'false';
+  void options;
 
   return `import { Outlet, NavLink, useNavigate } from 'react-router';
 import { useEffect, useMemo, useState } from 'react';
-import { getPortalMenuSections } from '@hubforge/appstack';
+import { getPortalMenuSections } from '../lib/menu';
 import { applyPortalTheme, applyStoredPortalTheme } from '../lib/theme';
+import { useI18n } from '../lib/i18n';
 
 const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
-const AUTH_SERVER_ENABLED = ${authServerEnabled};
 
 type Membership = { tenantId: string; role: string; tenant?: { name?: string | null } | null };
 type MeResponse = { user?: { name?: string | null; email?: string | null } | null; memberships?: Membership[] };
@@ -5404,15 +5711,15 @@ function initialsFromName(name: string): string {
 
 export default function AppLayout() {
   const navigate = useNavigate();
+  const { language, setLanguage, t } = useI18n();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [accountOpen, setAccountOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [language, setLanguage] = useState<'en' | 'es'>('en');
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
   const [me, setMe] = useState<MeResponse>({});
   const [deliveries, setDeliveries] = useState<NotificationDelivery[]>([]);
 
-  const sections = useMemo(() => getPortalMenuSections(AUTH_SERVER_ENABLED), []);
+  const sections = useMemo(() => getPortalMenuSections(), []);
 
   useEffect(() => {
     applyStoredPortalTheme();
@@ -5424,9 +5731,6 @@ export default function AppLayout() {
         setCollapsed({});
       }
     }
-
-    const storedLang = (localStorage.getItem('hf_lang') as 'en' | 'es' | null) ?? 'en';
-    setLanguage(storedLang);
 
     const preset = (localStorage.getItem('hf_theme_preset') ?? 'ynex-light') as string;
     setThemeMode(preset === 'slate' ? 'dark' : 'light');
@@ -5459,11 +5763,6 @@ export default function AppLayout() {
     localStorage.setItem('hf_nav_collapsed', JSON.stringify(next));
   }
 
-  function changeLanguage(value: 'en' | 'es') {
-    setLanguage(value);
-    localStorage.setItem('hf_lang', value);
-  }
-
   function toggleTheme() {
     const next = themeMode === 'light' ? 'dark' : 'light';
     setThemeMode(next);
@@ -5474,6 +5773,22 @@ export default function AppLayout() {
     localStorage.removeItem('token');
     localStorage.removeItem('tenantId');
     window.location.href = '/login';
+  }
+
+  async function switchTenant(nextTenantId: string) {
+    const token = localStorage.getItem('token') ?? '';
+    const res = await fetch(API + '/v1/auth/switch-tenant', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+      body: JSON.stringify({ tenantId: nextTenantId }),
+    });
+    if (!res.ok) return;
+    localStorage.setItem('tenantId', nextTenantId);
+    window.location.reload();
+  }
+
+  function menuLabel(id: string, fallback: string): string {
+    return t('nav.' + id.replace(/-/g, '_'), fallback);
   }
 
   const unreadCount = deliveries.filter((d) => d.status !== 'sent').length;
@@ -5487,7 +5802,7 @@ export default function AppLayout() {
           <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 40%, #0ea5e9 100%)', marginRight: 10 }} />
           <div>
             <p style={{ margin: 0, fontWeight: 700, color: '#eff6ff' }}>HubForge</p>
-            <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#9fb0cb', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Portal Workspace</p>
+            <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#9fb0cb', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{t('workspace.label', 'Workspace')}</p>
           </div>
         </div>
 
@@ -5501,7 +5816,7 @@ export default function AppLayout() {
                   onClick={() => toggleSection(section.id)}
                   style={{ width: '100%', textAlign: 'left', margin: '0 0 0.45rem', padding: '0.25rem 0.45rem', fontSize: '0.68rem', color: '#8fa2c0', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
                 >
-                  <span>{section.label}</span>
+                  <span>{t('nav.section.' + section.id, section.label)}</span>
                   <span>{isCollapsed ? '+' : '-'}</span>
                 </button>
 
@@ -5523,7 +5838,7 @@ export default function AppLayout() {
                       fontWeight: isActive ? 600 : 500,
                     })}
                   >
-                    {item.label}
+                    {menuLabel(item.id, item.label)}
                   </NavLink>
                 ))}
               </div>
@@ -5533,7 +5848,7 @@ export default function AppLayout() {
 
         <div style={{ padding: '1rem', borderTop: '1px solid rgba(148, 163, 184, 0.2)' }}>
           <button onClick={logout} style={{ width: '100%', padding: '8px 10px', borderRadius: 10, background: 'rgba(15, 23, 42, 0.35)', border: '1px solid rgba(148, 163, 184, 0.24)', color: '#d6e0ee', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
-            Logout
+            {t('menu.logout', 'Logout')}
           </button>
         </div>
       </aside>
@@ -5541,8 +5856,8 @@ export default function AppLayout() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header style={{ minHeight: 72, background: 'var(--hf-header)', borderBottom: '1px solid var(--hf-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 1.65rem', position: 'relative' }}>
           <div>
-            <p style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--hf-muted)', fontWeight: 700 }}>Workspace</p>
-            <p style={{ margin: '2px 0 0', fontSize: '1.05rem', fontWeight: 700 }}>Control Center</p>
+            <p style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--hf-muted)', fontWeight: 700 }}>{t('workspace.label', 'Workspace')}</p>
+            <p style={{ margin: '2px 0 0', fontSize: '1.05rem', fontWeight: 700 }}>{t('workspace.title', 'Control Center')}</p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'relative' }}>
@@ -5562,16 +5877,16 @@ export default function AppLayout() {
 
             {notifOpen ? (
               <div style={{ position: 'absolute', top: 42, right: 120, width: 340, maxHeight: 360, overflow: 'auto', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', boxShadow: 'var(--hf-card-shadow)' }}>
-                <div style={{ padding: '0.75rem 0.9rem', borderBottom: '1px solid var(--hf-border)', fontWeight: 700 }}>Recent Notifications</div>
+                <div style={{ padding: '0.75rem 0.9rem', borderBottom: '1px solid var(--hf-border)', fontWeight: 700 }}>{t('notifications.title', 'Recent Notifications')}</div>
                 {deliveries.map((item) => (
                   <div key={item.id} style={{ padding: '0.65rem 0.9rem', borderBottom: '1px solid var(--hf-border)' }}>
                     <p style={{ margin: 0, fontWeight: 600 }}>{item.subject ?? 'Notification'}</p>
                     <p style={{ margin: '0.2rem 0 0', color: 'var(--hf-muted)', fontSize: '0.8rem' }}>{item.status}</p>
                   </div>
                 ))}
-                {deliveries.length === 0 ? <p style={{ margin: 0, padding: '0.85rem', color: 'var(--hf-muted)' }}>No notifications.</p> : null}
+                {deliveries.length === 0 ? <p style={{ margin: 0, padding: '0.85rem', color: 'var(--hf-muted)' }}>{t('notifications.empty', 'No notifications.')}</p> : null}
                 <button type="button" onClick={() => setDeliveries([])} style={{ margin: '0.75rem', width: 'calc(100% - 1.5rem)', border: '1px solid var(--hf-border)', borderRadius: 8, background: 'transparent', padding: '0.45rem', cursor: 'pointer' }}>
-                  Clear
+                  {t('notifications.clear', 'Clear')}
                 </button>
               </div>
             ) : null}
@@ -5583,26 +5898,26 @@ export default function AppLayout() {
 
             {accountOpen ? (
               <div style={{ position: 'absolute', top: 42, right: 0, width: 260, border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', boxShadow: 'var(--hf-card-shadow)' }}>
-                <button type="button" onClick={() => { setAccountOpen(false); navigate('/profile'); }} style={menuActionStyle}>Profile</button>
+                <button type="button" onClick={() => { setAccountOpen(false); navigate('/profile'); }} style={menuActionStyle}>{t('menu.profile', 'Profile')}</button>
                 <div style={{ padding: '0.45rem 0.75rem', borderTop: '1px solid var(--hf-border)' }}>
-                  <p style={{ margin: '0 0 0.4rem', fontSize: '0.74rem', color: 'var(--hf-muted)', textTransform: 'uppercase' }}>Switch Tenant</p>
+                  <p style={{ margin: '0 0 0.4rem', fontSize: '0.74rem', color: 'var(--hf-muted)', textTransform: 'uppercase' }}>{t('menu.switch_tenant', 'Switch Tenant')}</p>
                   <div style={{ display: 'grid', gap: '0.3rem' }}>
                     {(me.memberships ?? []).map((m) => (
-                      <button key={m.tenantId} type="button" onClick={() => { localStorage.setItem('tenantId', m.tenantId); window.location.reload(); }} style={menuActionStyle}>
+                      <button key={m.tenantId} type="button" onClick={() => { void switchTenant(m.tenantId); }} style={menuActionStyle}>
                         {m.tenant?.name ?? m.tenantId}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div style={{ padding: '0.45rem 0.75rem', borderTop: '1px solid var(--hf-border)' }}>
-                  <label style={{ fontSize: '0.74rem', color: 'var(--hf-muted)', display: 'block', marginBottom: 4 }}>Language</label>
-                  <select value={language} onChange={(e) => changeLanguage(e.currentTarget.value as 'en' | 'es')} style={{ width: '100%', borderRadius: 8, padding: '0.35rem 0.5rem' }}>
+                  <label style={{ fontSize: '0.74rem', color: 'var(--hf-muted)', display: 'block', marginBottom: 4 }}>{t('menu.language', 'Language')}</label>
+                  <select value={language} onChange={(e) => setLanguage(e.currentTarget.value as 'en' | 'es')} style={{ width: '100%', borderRadius: 8, padding: '0.35rem 0.5rem' }}>
                     <option value="en">English</option>
-                    <option value="es">Español</option>
+                    <option value="es">Espanol</option>
                   </select>
                 </div>
-                <button type="button" onClick={toggleTheme} style={menuActionStyle}>Theme: {themeMode === 'light' ? 'Light' : 'Dark'}</button>
-                <button type="button" onClick={logout} style={{ ...menuActionStyle, color: '#b91c1c' }}>Logout</button>
+                <button type="button" onClick={toggleTheme} style={menuActionStyle}>{themeMode === 'light' ? t('menu.theme.light', 'Theme: Light') : t('menu.theme.dark', 'Theme: Dark')}</button>
+                <button type="button" onClick={logout} style={{ ...menuActionStyle, color: '#b91c1c' }}>{t('menu.logout', 'Logout')}</button>
               </div>
             ) : null}
           </div>
@@ -5689,6 +6004,7 @@ ${authServerLink}
 
 function portalProfileRoute(): string {
   return `import { useEffect, useState } from 'react';
+import { useI18n } from '../lib/i18n';
 
 const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
 
@@ -5696,11 +6012,13 @@ type ProfileForm = {
   name: string;
   email: string;
   timezone: string;
-  locale: string;
+  language: 'en' | 'es';
+  theme: string;
 };
 
 export default function ProfilePage() {
-  const [form, setForm] = useState<ProfileForm>({ name: '', email: '', timezone: 'UTC', locale: 'en' });
+  const { language, setLanguage, t } = useI18n();
+  const [form, setForm] = useState<ProfileForm>({ name: '', email: '', timezone: 'UTC', language, theme: 'ynex-light' });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -5708,58 +6026,84 @@ export default function ProfilePage() {
     const tenantId = localStorage.getItem('tenantId') ?? '';
     const token = localStorage.getItem('token') ?? '';
 
-    fetch(API + '/v1/auth/me', {
+    fetch(API + '/v1/auth/profile', {
       headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
     })
       .then(async (res) => {
         if (!res.ok) return;
-        const data = (await res.json()) as { user?: { name?: string | null; email?: string | null } | null };
+        const data = (await res.json()) as { profile?: Partial<ProfileForm> };
         setForm((current) => ({
           ...current,
-          name: data.user?.name ?? '',
-          email: data.user?.email ?? '',
-          locale: (localStorage.getItem('hf_lang') ?? 'en') as string,
+          name: typeof data.profile?.name === 'string' ? data.profile.name : '',
+          email: typeof data.profile?.email === 'string' ? data.profile.email : '',
+          timezone: typeof data.profile?.timezone === 'string' ? data.profile.timezone : 'UTC',
+          language: data.profile?.language === 'es' ? 'es' : 'en',
+          theme: typeof data.profile?.theme === 'string' ? data.profile.theme : 'ynex-light',
         }));
       })
       .catch(() => undefined);
-  }, []);
+  }, [language]);
 
   async function save() {
     setSaving(true);
     setMessage(null);
-    localStorage.setItem('hf_lang', form.locale || 'en');
-    setTimeout(() => {
-      setMessage('Profile preferences saved locally.');
-      setSaving(false);
-    }, 300);
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+
+    const res = await fetch(API + '/v1/auth/profile', {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + token,
+        'x-tenant-id': tenantId,
+      },
+      body: JSON.stringify(form),
+    });
+
+    if (res.ok) {
+      setLanguage(form.language);
+      localStorage.setItem('hf_theme_preset', form.theme || 'ynex-light');
+      setMessage(t('profile.saved', 'Profile saved.'));
+    } else {
+      setMessage('Failed to save profile.');
+    }
+    setSaving(false);
   }
 
   return (
     <section style={{ maxWidth: 720 }}>
-      <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.4rem' }}>Profile</h2>
-      <p style={{ margin: '0 0 1rem', color: 'var(--hf-muted)' }}>Manage account preferences and language defaults.</p>
+      <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.4rem' }}>{t('profile.title', 'Profile')}</h2>
+      <p style={{ margin: '0 0 1rem', color: 'var(--hf-muted)' }}>{t('profile.subtitle', 'Manage account preferences and language defaults.')}</p>
       <div style={{ border: '1px solid var(--hf-border)', borderRadius: 14, background: 'var(--hf-surface)', padding: '1rem', display: 'grid', gap: '0.75rem' }}>
         <label style={{ display: 'grid', gap: 6 }}>
-          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>Display name</span>
+          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>{t('profile.name', 'Display name')}</span>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.5rem 0.65rem' }} />
         </label>
         <label style={{ display: 'grid', gap: 6 }}>
-          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>Email</span>
+          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>{t('profile.email', 'Email')}</span>
           <input value={form.email} onChange={(e) => setForm({ ...form, email: e.currentTarget.value })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.5rem 0.65rem' }} />
         </label>
         <label style={{ display: 'grid', gap: 6 }}>
-          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>Timezone</span>
+          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>{t('profile.timezone', 'Timezone')}</span>
           <input value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.currentTarget.value })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.5rem 0.65rem' }} />
         </label>
         <label style={{ display: 'grid', gap: 6 }}>
-          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>Language</span>
-          <select value={form.locale} onChange={(e) => setForm({ ...form, locale: e.currentTarget.value })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.45rem 0.6rem' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>{t('profile.language', 'Language')}</span>
+          <select value={form.language} onChange={(e) => setForm({ ...form, language: e.currentTarget.value as 'en' | 'es' })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.45rem 0.6rem' }}>
             <option value="en">English</option>
-            <option value="es">Español</option>
+            <option value="es">Espanol</option>
+          </select>
+        </label>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--hf-muted)' }}>Theme preset</span>
+          <select value={form.theme} onChange={(e) => setForm({ ...form, theme: e.currentTarget.value })} style={{ borderRadius: 8, border: '1px solid var(--hf-border)', padding: '0.45rem 0.6rem' }}>
+            <option value="ynex-light">ynex-light</option>
+            <option value="slate">slate</option>
+            <option value="forest">forest</option>
           </select>
         </label>
         <button type="button" disabled={saving} onClick={save} style={{ width: 160, borderRadius: 8, border: '1px solid var(--hf-primary)', background: 'var(--hf-primary)', color: '#fff', padding: '0.5rem 0.75rem', cursor: 'pointer', fontWeight: 600 }}>
-          {saving ? 'Saving...' : 'Save Profile'}
+          {saving ? t('profile.saving', 'Saving...') : t('profile.save', 'Save Profile')}
         </button>
         {message ? <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.84rem' }}>{message}</p> : null}
       </div>
@@ -5771,12 +6115,14 @@ export default function ProfilePage() {
 
 function portalModulesRoute(): string {
   return `import { useEffect, useMemo, useState } from 'react';
-import { getPortalMenuSections } from '@hubforge/appstack';
+import { getPortalMenuSections } from '../lib/menu';
+import { useI18n } from '../lib/i18n';
 
 const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
 
 export default function ModulesSettingsPage() {
-  const menu = useMemo(() => getPortalMenuSections(true), []);
+  const { t } = useI18n();
+  const menu = useMemo(() => getPortalMenuSections(), []);
   const moduleItems = useMemo(() => menu.flatMap((section) => section.children.filter((item) => item.moduleId || item.id === 'assistant' || item.id === 'notifications' || item.id === 'jobs')), [menu]);
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -5817,8 +6163,8 @@ export default function ModulesSettingsPage() {
 
   return (
     <section style={{ maxWidth: 820 }}>
-      <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.4rem' }}>Modules</h2>
-      <p style={{ margin: '0 0 1rem', color: 'var(--hf-muted)' }}>Enable and disable tenant modules without editing code.</p>
+      <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.4rem' }}>{t('modules.title', 'Modules')}</h2>
+      <p style={{ margin: '0 0 1rem', color: 'var(--hf-muted)' }}>{t('modules.subtitle', 'Enable and disable tenant modules without editing code.')}</p>
       <div style={{ display: 'grid', gap: '0.7rem' }}>
         {moduleItems.map((item) => {
           const isEnabled = enabled[item.id] !== false;
@@ -5834,7 +6180,7 @@ export default function ModulesSettingsPage() {
                 onClick={() => toggleModule(item.id, !isEnabled)}
                 style={{ borderRadius: 999, border: '1px solid var(--hf-border)', background: isEnabled ? 'var(--hf-primary)' : 'transparent', color: isEnabled ? '#fff' : 'var(--hf-foreground)', padding: '0.4rem 0.8rem', cursor: 'pointer', minWidth: 96 }}
               >
-                {savingKey === item.id ? 'Saving...' : isEnabled ? 'Enabled' : 'Disabled'}
+                {savingKey === item.id ? t('common.saving', 'Saving...') : isEnabled ? t('modules.enabled', 'Enabled') : t('modules.disabled', 'Disabled')}
               </button>
             </div>
           );
@@ -6813,7 +7159,7 @@ type SchedulerReply = {
 };
 
 export default function AssistantPage() {
-  const [prompt, setPrompt] = useState('Generate an operations checklist for completing today\'s deployment safely.');
+  const [prompt, setPrompt] = useState("Generate an operations checklist for completing today's deployment safely.");
   const [reply, setReply] = useState<AssistantReply | null>(null);
   const [scheduleReply, setScheduleReply] = useState<SchedulerReply | null>(null);
   const [loading, setLoading] = useState(false);
