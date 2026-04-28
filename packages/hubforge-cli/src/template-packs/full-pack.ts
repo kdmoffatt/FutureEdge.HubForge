@@ -6729,8 +6729,8 @@ export default function RolesPage() {
 
   return (
     <div>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Roles</h2>
-      <p style={{ margin: '0 0 0.9rem', color: '#64748b' }}>Manage tenant roles and assign permissions.</p>
+      <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.45rem', color: 'var(--hf-foreground)' }}>Roles</h2>
+      <p style={{ margin: '0 0 0.9rem', color: 'var(--hf-muted)' }}>Manage tenant roles and assign permissions with quick filtering.</p>
 
       <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: '2fr 3fr auto', marginBottom: '0.75rem', maxWidth: 900 }}>
         <input value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Role name" style={inputStyle} />
@@ -6777,7 +6777,7 @@ export default function RolesPage() {
                     <button onClick={() => void removePermission(assignment.id)} style={chipRemoveStyle}>x</button>
                   </span>
                 ))}
-                {role.permissions.length === 0 && <span style={{ color: '#64748b', fontSize: '0.85rem' }}>No permissions assigned</span>}
+                {role.permissions.length === 0 && <span style={{ color: 'var(--hf-muted)', fontSize: '0.85rem' }}>No permissions assigned</span>}
               </div>
 
               <div style={{ display: 'flex', gap: 8, maxWidth: 520 }}>
@@ -6797,17 +6797,18 @@ export default function RolesPage() {
           );
         })}
 
-        {filteredRoles.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No roles found.</p>}
+        {filteredRoles.length === 0 && <p style={{ margin: 0, padding: '1rem', color: 'var(--hf-muted)' }}>No roles found.</p>}
       </div>
     </div>
   );
 }
 
 const cardStyle = {
-  background: '#fff',
-  border: '1px solid #e5e7eb',
-  borderRadius: 12,
-  padding: '0.8rem',
+  background: 'var(--hf-surface)',
+  border: '1px solid var(--hf-border)',
+  borderRadius: 14,
+  padding: '0.9rem',
+  boxShadow: 'var(--hf-card-shadow-soft)',
 };
 
 const chipStyle = {
@@ -6815,52 +6816,57 @@ const chipStyle = {
   alignItems: 'center',
   gap: 8,
   borderRadius: 999,
-  background: '#ecfdf5',
-  color: '#065f46',
+  background: 'var(--hf-primary-soft)',
+  color: 'var(--hf-primary)',
   padding: '3px 10px',
   fontSize: '0.82rem',
+  fontWeight: 700,
 };
 
 const chipRemoveStyle = {
   border: 'none',
   background: 'transparent',
-  color: '#065f46',
+  color: 'inherit',
   fontSize: '1rem',
   lineHeight: 1,
   cursor: 'pointer',
 };
 
 const inputStyle = {
-  border: '1px solid #d1d5db',
-  borderRadius: 8,
-  padding: '8px 10px',
+  border: '1px solid var(--hf-border)',
+  borderRadius: 10,
+  padding: '9px 11px',
+  background: 'var(--hf-surface)',
 };
 
 const buttonStyle = {
   border: 'none',
-  borderRadius: 8,
+  borderRadius: 10,
   padding: '8px 12px',
-  background: '#2563eb',
+  background: 'var(--hf-primary)',
   color: '#fff',
   cursor: 'pointer',
+  fontWeight: 700,
 };
 
 const secondaryButtonStyle = {
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
+  border: '1px solid var(--hf-border)',
+  borderRadius: 10,
   padding: '8px 12px',
-  background: '#fff',
-  color: '#1f2937',
+  background: 'var(--hf-surface)',
+  color: 'var(--hf-foreground)',
   cursor: 'pointer',
+  fontWeight: 700,
 };
 
 const dangerButtonStyle = {
   border: 'none',
-  borderRadius: 8,
+  borderRadius: 10,
   padding: '8px 12px',
   background: '#dc2626',
   color: '#fff',
   cursor: 'pointer',
+  fontWeight: 700,
 };
 `;
 }
@@ -6948,8 +6954,8 @@ export default function PermissionsPage() {
 
   return (
     <div>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Permissions</h2>
-      <p style={{ margin: '0 0 0.9rem', color: '#64748b' }}>Create and maintain module permission keys used by RBAC.</p>
+      <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.45rem', color: 'var(--hf-foreground)' }}>Permissions</h2>
+      <p style={{ margin: '0 0 0.9rem', color: 'var(--hf-muted)' }}>Create and maintain module permission keys used by RBAC.</p>
 
       <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1.2fr 1fr 2fr auto', marginBottom: '0.75rem' }}>
         <input value={moduleName} onChange={(e) => setModuleName(e.currentTarget.value)} placeholder="module (e.g. billing)" style={inputStyle} />
@@ -6994,56 +7000,61 @@ export default function PermissionsPage() {
           </div>
         ))}
 
-        {filteredPermissions.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No permissions found.</p>}
+        {filteredPermissions.length === 0 && <p style={{ margin: 0, padding: '1rem', color: 'var(--hf-muted)' }}>No permissions found.</p>}
       </div>
     </div>
   );
 }
 
 const cardStyle = {
-  background: '#fff',
-  border: '1px solid #e5e7eb',
-  borderRadius: 12,
-  padding: '0.75rem',
+  background: 'var(--hf-surface)',
+  border: '1px solid var(--hf-border)',
+  borderRadius: 14,
+  padding: '0.85rem',
+  boxShadow: 'var(--hf-card-shadow-soft)',
 };
 
 const inputStyle = {
-  border: '1px solid #d1d5db',
-  borderRadius: 8,
-  padding: '8px 10px',
+  border: '1px solid var(--hf-border)',
+  borderRadius: 10,
+  padding: '9px 11px',
+  background: 'var(--hf-surface)',
 };
 
 const buttonStyle = {
   border: 'none',
-  borderRadius: 8,
+  borderRadius: 10,
   padding: '8px 12px',
-  background: '#2563eb',
+  background: 'var(--hf-primary)',
   color: '#fff',
   cursor: 'pointer',
+  fontWeight: 700,
 };
 
 const secondaryButtonStyle = {
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
+  border: '1px solid var(--hf-border)',
+  borderRadius: 10,
   padding: '8px 12px',
-  background: '#fff',
-  color: '#1f2937',
+  background: 'var(--hf-surface)',
+  color: 'var(--hf-foreground)',
   cursor: 'pointer',
+  fontWeight: 700,
 };
 
 const dangerButtonStyle = {
   border: 'none',
-  borderRadius: 8,
+  borderRadius: 10,
   padding: '8px 12px',
   background: '#dc2626',
   color: '#fff',
   cursor: 'pointer',
+  fontWeight: 700,
 };
 `;
 }
 
 function portalJobsRoute(): string {
-  return `import { useEffect, useState } from 'react';
+  return `import { useEffect, useMemo, useState } from 'react';
 
 const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
 
@@ -7058,16 +7069,24 @@ type JobRecord = {
 export default function JobsPage() {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [jobType, setJobType] = useState('demo.sync');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'queued' | 'running' | 'completed' | 'failed'>('all');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const token = localStorage.getItem('token') ?? '';
+  const tenantId = localStorage.getItem('tenantId') ?? '';
 
   async function load() {
-    const token = localStorage.getItem('token') ?? '';
-    const tenantId = localStorage.getItem('tenantId') ?? '';
+    setLoading(true);
     const res = await fetch(API + '/v1/jobs', {
       headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
     });
-    if (!res.ok) return;
-    const data = (await res.json()) as JobRecord[];
-    setJobs(data);
+    if (res.ok) {
+      const data = (await res.json()) as JobRecord[];
+      setJobs(data);
+    }
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -7075,35 +7094,82 @@ export default function JobsPage() {
   }, []);
 
   async function triggerJob() {
-    const token = localStorage.getItem('token') ?? '';
-    const tenantId = localStorage.getItem('tenantId') ?? '';
+    setMessage('');
     const res = await fetch(API + '/v1/jobs/' + encodeURIComponent(jobType) + '/trigger', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
       body: JSON.stringify({ payload: { source: 'portal' }, priority: 1 }),
     });
     if (res.ok) {
+      setMessage('Job triggered.');
       await load();
+      return;
     }
+    setMessage('Unable to trigger job.');
+  }
+
+  const filteredJobs = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return jobs.filter((j) => {
+      const matchesStatus = statusFilter === 'all' ? true : j.status === statusFilter;
+      const matchesText = q.length === 0 ? true : (j.jobType + ' ' + j.status + ' ' + j.id).toLowerCase().includes(q);
+      return matchesStatus && matchesText;
+    });
+  }, [jobs, search, statusFilter]);
+
+  const stats = useMemo(() => ({
+    queued: jobs.filter((j) => j.status === 'queued').length,
+    running: jobs.filter((j) => j.status === 'running').length,
+    failed: jobs.filter((j) => j.status === 'failed').length,
+  }), [jobs]);
+
+  function statusBadgeStyle(status: string) {
+    if (status === 'failed') return { ...statusBaseStyle, background: '#fee2e2', color: '#991b1b' };
+    if (status === 'running') return { ...statusBaseStyle, background: '#dbeafe', color: '#1d4ed8' };
+    if (status === 'completed') return { ...statusBaseStyle, background: '#dcfce7', color: '#166534' };
+    return { ...statusBaseStyle, background: '#e2e8f0', color: '#334155' };
   }
 
   return (
     <div>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Background Jobs</h2>
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', maxWidth: 560 }}>
+      <h2 style={{ fontSize: '1.65rem', fontWeight: 800, marginBottom: '0.4rem', color: 'var(--hf-foreground)' }}>Background Jobs</h2>
+      <p style={{ marginTop: 0, marginBottom: '0.95rem', color: 'var(--hf-muted)' }}>Trigger work, inspect queue state, and quickly triage failed jobs.</p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(120px, 1fr))', gap: '0.7rem', marginBottom: '1rem', maxWidth: 620 }}>
+        <div style={metricCardStyle}><p style={metricLabelStyle}>Queued</p><p style={metricValueStyle}>{stats.queued}</p></div>
+        <div style={metricCardStyle}><p style={metricLabelStyle}>Running</p><p style={metricValueStyle}>{stats.running}</p></div>
+        <div style={metricCardStyle}><p style={metricLabelStyle}>Failed</p><p style={{ ...metricValueStyle, color: '#b91c1c' }}>{stats.failed}</p></div>
+      </div>
+
+      <div style={{ display: 'grid', gap: '0.6rem', gridTemplateColumns: '1.5fr auto auto', marginBottom: '0.75rem', maxWidth: 780 }}>
         <input value={jobType} onChange={(e) => setJobType(e.currentTarget.value)} placeholder="job type" style={{ ...inputStyle, flex: 1 }} />
         <button onClick={triggerJob} style={buttonStyle}>Trigger Job</button>
+        <button onClick={() => void load()} style={secondaryButtonStyle}>{loading ? 'Refreshing...' : 'Refresh'}</button>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
-        {jobs.map((j) => (
-          <div key={j.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 1.5fr', gap: '0.5rem', padding: '0.7rem 1rem', borderBottom: '1px solid #f1f5f9' }}>
+
+      <div style={{ display: 'grid', gap: '0.6rem', gridTemplateColumns: '1.5fr 180px', marginBottom: '0.75rem', maxWidth: 780 }}>
+        <input value={search} onChange={(e) => setSearch(e.currentTarget.value)} placeholder="Search jobs by type/status/id" style={inputStyle} />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.currentTarget.value as typeof statusFilter)} style={inputStyle}>
+          <option value="all">All statuses</option>
+          <option value="queued">Queued</option>
+          <option value="running">Running</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+        </select>
+      </div>
+
+      {message ? <p style={{ margin: '0 0 0.75rem', color: message.includes('Unable') ? '#b91c1c' : '#166534' }}>{message}</p> : null}
+
+      <div style={{ background: 'var(--hf-surface)', border: '1px solid var(--hf-border)', borderRadius: 14, boxShadow: 'var(--hf-card-shadow-soft)' }}>
+        {filteredJobs.map((j) => (
+          <div key={j.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 1.5fr', gap: '0.5rem', padding: '0.75rem 1rem', borderBottom: '1px solid var(--hf-border)' }}>
             <span style={{ fontWeight: 600 }}>{j.jobType}</span>
-            <span>{j.status}</span>
+            <span style={statusBadgeStyle(j.status)}>{j.status}</span>
             <span>{j.attempts}</span>
-            <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{new Date(j.createdAt).toLocaleString()}</span>
+            <span style={{ color: 'var(--hf-muted)', fontSize: '0.85rem' }}>{new Date(j.createdAt).toLocaleString()}</span>
           </div>
         ))}
-        {jobs.length === 0 && <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No jobs queued yet.</p>}
+        {filteredJobs.length === 0 && <p style={{ margin: 0, padding: '1rem', color: 'var(--hf-muted)' }}>No jobs match current filters.</p>}
       </div>
     </div>
   );
@@ -7119,9 +7185,49 @@ const buttonStyle = {
   border: 'none',
   borderRadius: 8,
   padding: '8px 12px',
-  background: '#2563eb',
+  background: 'var(--hf-primary)',
   color: '#fff',
   cursor: 'pointer',
+};
+
+const secondaryButtonStyle = {
+  border: '1px solid var(--hf-border)',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: 'var(--hf-surface)',
+  color: 'var(--hf-foreground)',
+  cursor: 'pointer',
+};
+
+const metricCardStyle = {
+  border: '1px solid var(--hf-border)',
+  borderRadius: 12,
+  background: 'var(--hf-surface)',
+  padding: '0.7rem 0.8rem',
+};
+
+const metricLabelStyle = {
+  margin: 0,
+  fontSize: '0.78rem',
+  color: 'var(--hf-muted)',
+};
+
+const metricValueStyle = {
+  margin: '0.25rem 0 0',
+  fontSize: '1.2rem',
+  fontWeight: 800,
+  color: 'var(--hf-foreground)',
+};
+
+const statusBaseStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 'fit-content',
+  borderRadius: 999,
+  padding: '2px 10px',
+  fontSize: '0.78rem',
+  fontWeight: 700,
 };
 `;
 }
@@ -7366,7 +7472,7 @@ const primaryButtonStyle = {
 }
 
 function portalNotificationsRoute(): string {
-  return `import { useEffect, useState } from 'react';
+  return `import { useEffect, useMemo, useState } from 'react';
 
 const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
 
@@ -7401,6 +7507,8 @@ export default function NotificationsPage() {
   const [recipient, setRecipient] = useState('admin@local-demo.com');
   const [variablesJson, setVariablesJson] = useState('{"tenantName":"Local Demo","userName":"Admin","itemId":"INC-100"}');
   const [status, setStatus] = useState('');
+  const [logFilter, setLogFilter] = useState<'all' | 'sent' | 'failed'>('all');
+  const [logSearch, setLogSearch] = useState('');
 
   async function load() {
     const token = localStorage.getItem('token') ?? '';
@@ -7498,6 +7606,29 @@ export default function NotificationsPage() {
     await load();
   }
 
+  const filteredDeliveries = useMemo(() => {
+    const q = logSearch.trim().toLowerCase();
+    return deliveries.filter((d) => {
+      const byStatus = logFilter === 'all' ? true : d.status === logFilter;
+      const byText = q.length === 0 ? true : (d.recipient + ' ' + (d.subject ?? '') + ' ' + d.channel + ' ' + d.status).toLowerCase().includes(q);
+      return byStatus && byText;
+    });
+  }, [deliveries, logFilter, logSearch]);
+
+  function applyTemplate(item: TemplateRecord) {
+    setTemplateKey(item.key);
+    setChannel(item.channel);
+    setSubject(item.subject ?? '');
+    setBody(item.body);
+    setStatus('Template loaded into editor.');
+  }
+
+  function deliveryStatusStyle(value: string) {
+    if (value === 'failed') return { ...deliveryStatusBase, color: '#991b1b', background: '#fee2e2' };
+    if (value === 'sent') return { ...deliveryStatusBase, color: '#166534', background: '#dcfce7' };
+    return { ...deliveryStatusBase, color: '#1d4ed8', background: '#dbeafe' };
+  }
+
   return (
     <div>
       <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Notifications</h2>
@@ -7542,10 +7673,10 @@ export default function NotificationsPage() {
           <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '0.95rem', color: '#334155' }}>Template Keys</h4>
           <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
             {templates.map((item) => (
-              <div key={item.id} style={{ padding: '0.6rem 0.75rem', borderBottom: '1px solid #f1f5f9' }}>
+              <button key={item.id} onClick={() => applyTemplate(item)} style={{ width: '100%', textAlign: 'left', padding: '0.6rem 0.75rem', border: 'none', background: 'transparent', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}>
                 <p style={{ margin: 0, fontWeight: 600 }}>{item.key}</p>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>{item.channel} · {item.isActive ? 'active' : 'inactive'}</p>
-              </div>
+              </button>
             ))}
             {templates.length === 0 ? <p style={{ margin: 0, padding: '0.8rem', color: '#64748b' }}>No templates yet.</p> : null}
           </div>
@@ -7554,17 +7685,25 @@ export default function NotificationsPage() {
 
       <div style={{ ...cardStyle, marginTop: '1rem' }}>
         <h3 style={cardTitleStyle}>Delivery Log</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 180px', gap: '0.6rem', marginBottom: '0.7rem' }}>
+          <input value={logSearch} onChange={(e) => setLogSearch(e.currentTarget.value)} placeholder="Filter by recipient, channel, subject..." style={inputStyle} />
+          <select value={logFilter} onChange={(e) => setLogFilter(e.currentTarget.value as typeof logFilter)} style={inputStyle}>
+            <option value="all">All statuses</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
         <div style={{ border: '1px solid #e5e7eb', borderRadius: 10 }}>
-          {deliveries.map((d) => (
+          {filteredDeliveries.map((d) => (
             <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '110px 120px 1.4fr 110px 1.2fr', gap: '0.5rem', padding: '0.65rem 0.8rem', borderBottom: '1px solid #f1f5f9' }}>
               <span style={{ fontWeight: 600 }}>{d.channel}</span>
               <span style={{ color: '#334155' }}>{d.provider ?? 'n/a'}</span>
               <span style={{ color: '#0f172a' }}>{d.recipient}</span>
-              <span style={{ color: d.status === 'failed' ? '#b91c1c' : '#166534', fontWeight: 600 }}>{d.status}</span>
+              <span style={deliveryStatusStyle(d.status)}>{d.status}</span>
               <span style={{ color: '#64748b', fontSize: '0.82rem' }}>{new Date(d.createdAt).toLocaleString()}</span>
             </div>
           ))}
-          {deliveries.length === 0 ? <p style={{ margin: 0, padding: '0.9rem', color: '#64748b' }}>No delivery records yet.</p> : null}
+          {filteredDeliveries.length === 0 ? <p style={{ margin: 0, padding: '0.9rem', color: '#64748b' }}>No delivery records match current filters.</p> : null}
         </div>
       </div>
     </div>
@@ -7625,6 +7764,17 @@ const secondaryButtonStyle = {
   background: '#fff',
   color: '#1f2937',
   cursor: 'pointer',
+};
+
+const deliveryStatusBase = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 'fit-content',
+  borderRadius: 999,
+  padding: '2px 10px',
+  fontWeight: 700,
+  fontSize: '0.78rem',
 };
 `;
 }

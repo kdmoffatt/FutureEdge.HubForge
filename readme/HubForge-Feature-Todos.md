@@ -95,6 +95,7 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] Existing-project authserver enable command (`hubforge authserver enable --target <path> [--force]`)
 - [x] 2026-04-27: Added foundation docs bundle for final completion pass (`docs/background-jobs.md`, `docs/i18n.md`, `docs/features/*`)
 - [x] 2026-04-27: Implemented final completion code slice (dynamic portal menu/header, i18n hook, profile + tenant switch APIs, modules settings route wiring) and validated against FieldOps regen
+- [x] 2026-04-27: Improved jobs/RBAC/notifications portal UX in template generator and cleaned regen command naming to generic `hubforge:regen` / `hubforge:regen:sh`
 
 ## Platform services checklist (latest scan)
 

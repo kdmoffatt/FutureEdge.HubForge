@@ -2,6 +2,32 @@
 
 This file tracks implementation changes made in this session.
 
+## Latest update (regen command cleanup + UX completion)
+
+Completed requested cleanup and command naming generalization:
+
+- Added generic root scripts:
+  - `pnpm hubforge:regen`
+  - `pnpm hubforge:regen:sh`
+- Kept compatibility aliases:
+  - `pnpm fieldops:regen`
+  - `pnpm fieldops:regen:sh`
+- Updated script argument style to generic long options:
+  - `--target <path>`
+  - `--initialize-if-missing`
+  - `--force-upgrade`
+  - `--skip-validation`
+  - optional `--feature-profile fieldops` (for curated FieldOps feature patching)
+- Updated script messaging and defaults to non-FieldOps-specific behavior.
+
+Completed UX implementation for remaining portal slices in template generation:
+
+- Jobs UX: search + status filters, queue stats cards, status badges, refresh and user feedback
+- Notifications UX: delivery log filtering/search, template quick-load into editor, status badges
+- RBAC UX (roles/permissions): visual consistency with theme variables and improved readability
+
+Updated `readme/CLI-Instructions.md` to present the new generic command usage (`hubforge:regen:sh -- --target <project-path> --skip-validation`).
+
 ## Latest update (final completion implementation slice: menu/i18n/profile/modules)
 
 Delivered framework-level implementation updates in the full template generator:

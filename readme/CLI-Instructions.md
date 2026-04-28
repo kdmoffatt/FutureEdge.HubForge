@@ -29,7 +29,7 @@ Run from repository root:
   - `pnpm hubforge db seed --target ./local-dev`
   - `pnpm hubforge authserver enable --target ./local-dev --force`
   - `pnpm hubforge upgrade --target ../fieldops-workhub-local`
-  - `pnpm fieldops:regen`
+  - `pnpm hubforge:regen -- --target ../fieldops-workhub-local --skip-validation`
 
 ## Commands
 
@@ -188,31 +188,37 @@ Generates Kubernetes baseline manifests under `infra/k8s`:
 - After enabling, run database migration in the target project:
   - `pnpm --dir <target> db:migrate`
 
-### 7. FieldOps regeneration/upgrade script
+### 7. Workspace regeneration/upgrade script
 
-Use the repository script to safely bring an existing FieldOps workspace up to parity with current generators.
+Use the repository script to safely bring an existing generated workspace up to parity with current generators.
 
 Default command (PowerShell):
 
-- `pnpm fieldops:regen`
+- `pnpm hubforge:regen`
 
 Optional shell equivalent:
 
-- `pnpm fieldops:regen:sh -- --target ../fieldops-workhub-local --skip-validation`
+- `pnpm hubforge:regen:sh -- --target <project-path> --skip-validation`
 
 Behavior:
 
 - Builds the HubForge CLI first
 - Runs `hubforge upgrade` against the target project
-- Applies a curated feature set only when each feature marker file is missing
+- Optionally applies a curated feature profile only when requested
 - Runs `pnpm install`, `pnpm db:migrate`, and `pnpm db:seed` unless validation is explicitly skipped
 
-PowerShell flags (`scripts/fieldops-regenerate.ps1`):
+Flags:
 
-- `-TargetPath <path>` defaults to `../fieldops-workhub-local`
-- `-InitializeIfMissing` scaffold target first if `hubforge.json` is missing
-- `-ForceUpgrade` passes `--force` to `hubforge upgrade`
-- `-SkipValidation` skips install/migrate/seed
+- `--target <path>` defaults to `.`
+- `--initialize-if-missing` scaffold target first if `hubforge.json` is missing
+- `--force-upgrade` passes `--force` to `hubforge upgrade`
+- `--skip-validation` skips install/migrate/seed
+- `--feature-profile fieldops` applies the FieldOps curated feature bundle
+
+Legacy aliases remain available:
+
+- `pnpm fieldops:regen`
+- `pnpm fieldops:regen:sh`
 
 ## Documentation discipline
 
