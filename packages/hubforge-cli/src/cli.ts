@@ -1,3 +1,4 @@
+import { runDbCommand } from './commands/db.js';
 import { runFeatureCommand } from './commands/feature.js';
 import { runInfraCommand } from './commands/infra.js';
 import { runInitCommand } from './commands/init.js';
@@ -7,12 +8,14 @@ const HELP_TEXT = `HubForge CLI
 
 Usage:
   hubforge init <project-name> [options]
+  hubforge db seed [--target <path>]
   hubforge feature add <feature-name> [options]
   hubforge infra --target k8s
   hubforge upgrade [--target <path>] [--force]
 
 Commands:
   init              Scaffold a new HubForge-ready project baseline.
+  db seed           Run DB seed workflow in an existing HubForge project.
   feature add       Add a feature skeleton to an existing project.
   infra             Generate infrastructure manifests.
   upgrade           Apply new HubForge template updates to an existing project.
@@ -22,9 +25,15 @@ Init options:
   --db <provider>         sqlite | postgres | mysql | sqlserver (default: sqlite)
   --tenant <mode>         shared | isolated | schema-per-tenant | db-per-tenant (default: shared)
   --ai <mode>             fastapi | none (default: fastapi)
-  --auth <mode>           external | local (default: external)
+  --ai-provider <kind>    mock | openai | azure (default: mock)
+  --ai-key <value>        AI provider API key (default: change-me)
+  --auth <mode>           external | local (default: local)
   --auth-provider <kind>  zitadel | auth0 | keycloak | custom (default: zitadel)
+  --seed                  Run install + db:migrate + db:seed after scaffold
   --force                 Overwrite target directory if it already exists
+
+DB options:
+  --target <path>         Path to generated HubForge project (default: current directory)
 
 Feature options:
   --type <kind>           api | api-resource | admin-resource | ui | public-page | tenant-module | worker | background-job | auth-flow | billing-module | notifications-module | ai-agent (default: api)
@@ -39,6 +48,8 @@ Upgrade options:
 
 Examples:
   hubforge init my-app --template full --db sqlite --tenant shared
+  hubforge init my-app --ai-provider openai --ai-key sk_test_123 --seed
+  hubforge db seed --target ./my-app
   hubforge init acme-saas --template full-postgres-rls --db postgres --tenant isolated
   hubforge init enterprise --template full-cloud --db postgres --tenant isolated --auth external --auth-provider zitadel
   hubforge feature add landing --type public-page
@@ -73,6 +84,11 @@ export async function runCli(argv: string[]): Promise<void> {
 
   if (command === 'feature') {
     await runFeatureCommand(rest);
+    return;
+  }
+
+  if (command === 'db') {
+    await runDbCommand(rest);
     return;
   }
 

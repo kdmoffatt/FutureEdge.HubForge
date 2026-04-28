@@ -17,6 +17,7 @@ Run from repository root:
   - `pnpm hubforge init my-saas --template full-postgres-rls --db postgres --tenant isolated`
   - `pnpm hubforge init enterprise --template full-cloud --db postgres --tenant isolated --auth external --auth-provider zitadel`
   - `pnpm hubforge init local-dev --template full-local --db sqlite --tenant shared --auth local`
+  - `pnpm hubforge init local-dev --ai-provider openai --ai-key sk_test_123 --seed`
   - `pnpm hubforge feature add billing --type api`
   - `pnpm hubforge feature add landing --type public-page --target my-saas`
   - `pnpm hubforge feature add catalog --type api-resource --target my-saas`
@@ -25,7 +26,9 @@ Run from repository root:
   - `pnpm hubforge feature add auth --type auth-flow --target my-saas`
   - `pnpm hubforge feature add notifications --type notifications-module --target my-saas`
   - `pnpm hubforge infra --target k8s`
+  - `pnpm hubforge db seed --target ./local-dev`
   - `pnpm hubforge upgrade --target ../fieldops-workhub-local`
+  - `pnpm fieldops:regen`
 
 ## Commands
 
@@ -53,6 +56,11 @@ Options:
 - `--ai <mode>` where mode is one of:
   - `fastapi` (default)
   - `none`
+- `--ai-provider <kind>` where kind is one of:
+  - `mock` (default)
+  - `openai`
+  - `azure`
+- `--ai-key <value>` provider API key (default: `change-me`)
 - `--auth <mode>` where mode is one of:
   - `external`
   - `local`
@@ -63,6 +71,7 @@ Options:
   - `keycloak`
   - `custom`
 - `--authserver` to scaffold tenant-auth-server settings persistence and portal settings UI
+- `--seed` to run install + migrate + seed immediately after scaffolding
 - `--force` to scaffold into a non-empty target directory
 
 When no flags are provided, `hubforge init` now enters an interactive prompt flow.
@@ -152,7 +161,14 @@ Generates Kubernetes baseline manifests under `infra/k8s`:
 - portal deployment
 - ui deployment
 
-### 4. Upgrade command
+### 4. DB command
+
+`hubforge db seed [--target <path>]`
+
+- Runs `pnpm db:seed` inside an existing generated HubForge project
+- Useful for re-seeding demo/admin data after schema changes or local resets
+
+### 5. Upgrade command
 
 `hubforge upgrade [--target <path>] [--force]`
 
@@ -160,6 +176,32 @@ Generates Kubernetes baseline manifests under `infra/k8s`:
 - Re-scaffolds current template into a temporary directory
 - Applies missing files (or all template files with `--force`)
 - Supports plugin hooks (`beforeUpgrade`, `afterUpgrade`)
+
+### 6. FieldOps regeneration/upgrade script
+
+Use the repository script to safely bring an existing FieldOps workspace up to parity with current generators.
+
+Default command (PowerShell):
+
+- `pnpm fieldops:regen`
+
+Optional shell equivalent:
+
+- `pnpm fieldops:regen:sh -- --target ../fieldops-workhub-local --skip-validation`
+
+Behavior:
+
+- Builds the HubForge CLI first
+- Runs `hubforge upgrade` against the target project
+- Applies a curated feature set only when each feature marker file is missing
+- Runs `pnpm install`, `pnpm db:migrate`, and `pnpm db:seed` unless validation is explicitly skipped
+
+PowerShell flags (`scripts/fieldops-regenerate.ps1`):
+
+- `-TargetPath <path>` defaults to `../fieldops-workhub-local`
+- `-InitializeIfMissing` scaffold target first if `hubforge.json` is missing
+- `-ForceUpgrade` passes `--force` to `hubforge upgrade`
+- `-SkipValidation` skips install/migrate/seed
 
 ## Documentation discipline
 

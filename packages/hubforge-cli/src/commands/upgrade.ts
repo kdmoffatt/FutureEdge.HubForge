@@ -14,6 +14,7 @@ type Metadata = {
   dbProvider?: InitScaffoldOptions['dbProvider'];
   tenantMode?: InitScaffoldOptions['tenantMode'];
   aiMode?: InitScaffoldOptions['aiMode'];
+  aiProvider?: InitScaffoldOptions['aiProvider'];
   authMode?: InitScaffoldOptions['authMode'];
   authProvider?: InitScaffoldOptions['authProvider'];
   authServer?: boolean;
@@ -70,9 +71,12 @@ export async function runUpgradeCommand(args: string[]): Promise<void> {
     dbProvider: metadata.dbProvider ?? 'sqlite',
     tenantMode: metadata.tenantMode ?? 'shared',
     aiMode: metadata.aiMode ?? 'fastapi',
+    aiProvider: metadata.aiProvider ?? 'mock',
+    aiKey: 'change-me',
     authMode: metadata.authMode ?? 'local',
     authProvider: metadata.authProvider ?? 'zitadel',
     authServer: metadata.authServer ?? false,
+    seed: false,
     templatePack: metadata.templatePack ?? 'full',
     force: true,
   };

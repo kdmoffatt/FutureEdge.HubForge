@@ -87,11 +87,11 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] Full RBAC management parity (assignment + edit/delete + permissions CRUD)
 - [x] Background jobs scheduler + cron model + worker orchestration scripts
 - [x] Stripe webhook + subscription lifecycle + local mock billing fallback
-- [ ] Notification template model + provider abstraction + delivery log UI
-- [ ] AI chat assistant endpoints + portal assistant page + permission gating
-- [ ] AI scheduler real provider integration (OpenAI/Azure) with mock fallback
-- [ ] CLI enhancements: `hubforge init --seed`, `hubforge db seed`, `--ai-provider`, `--ai-key`
-- [ ] FieldOps regeneration/upgrade script to apply all new generated modules safely
+- [x] Notification template model + provider abstraction + delivery log UI
+- [x] AI chat assistant endpoints + portal assistant page + permission gating
+- [x] AI scheduler real provider integration (OpenAI/Azure) with mock fallback
+- [x] CLI enhancements: `hubforge init --seed`, `hubforge db seed`, `--ai-provider`, `--ai-key`
+- [x] FieldOps regeneration/upgrade script to apply all new generated modules safely
 
 ## Platform services checklist (latest scan)
 

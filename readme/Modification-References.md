@@ -2,6 +2,135 @@
 
 This file tracks implementation changes made in this session.
 
+## Latest update (FieldOps regeneration/upgrade script parity)
+
+Completed item 7 by adding a dedicated, repeatable FieldOps regeneration workflow script that upgrades existing sample workspaces and safely applies missing generated modules.
+
+- Added new scripts:
+  - `scripts/fieldops-regenerate.ps1` (PowerShell)
+  - `scripts/fieldops-regenerate.sh` (bash)
+- Added root package scripts for easy execution:
+  - `pnpm fieldops:regen`
+  - `pnpm fieldops:regen:sh`
+- Script workflow includes:
+  - Build CLI (`pnpm hubforge:build`)
+  - Upgrade target project (`hubforge upgrade --target <path>`)
+  - Apply curated feature set only when marker files are missing (idempotent-safe behavior)
+  - Validation phase (`pnpm install`, `pnpm db:migrate`, `pnpm db:seed`) unless skipped
+- Added script controls for safe operation:
+  - Initialize target if missing (`-InitializeIfMissing` / `--initialize-if-missing`)
+  - Optional force upgrade (`-ForceUpgrade` / `--force-upgrade`)
+  - Optional validation skip (`-SkipValidation` / `--skip-validation`)
+- Updated `readme/CLI-Instructions.md` with a dedicated section documenting usage and behavior.
+
+Validation completed for item 7 pass:
+
+- `pnpm --filter @hubforge/cli run build` passed
+- `pnpm fieldops:regen -- -TargetPath ./_tmp_regen_verify -InitializeIfMissing -SkipValidation` passed
+
+## Latest update (CLI item 6 enhancements)
+
+Completed CLI item 6 enhancements for init seeding workflow, DB seed command, and AI provider credential flags.
+
+- Added new CLI command:
+  - `hubforge db seed [--target <path>]`
+  - Implemented in `packages/hubforge-cli/src/commands/db.ts`
+  - Runs `pnpm db:seed` within the selected target directory
+- Extended `hubforge init` command flags:
+  - `--seed` to run post-scaffold seed workflow (`pnpm install`, `pnpm db:migrate`, `pnpm db:seed`)
+  - `--ai-provider <mock|openai|azure>`
+  - `--ai-key <value>`
+  - Interactive prompt flow now includes AI provider/key and optional immediate seed workflow
+- Updated template option model and scaffold propagation:
+  - Added `aiProvider`, `aiKey`, and `seed` fields to `InitScaffoldOptions`
+  - `full-pack.ts` env generation now writes `AI_PROVIDER` and `AI_KEY` from init options
+- Updated upgrade compatibility defaults:
+  - Upgrade metadata supports `aiProvider` with fallback to `mock`
+  - `aiKey` defaults safely to `change-me` in upgrade scaffolds
+- Updated CLI help text:
+  - Added `db seed` usage/examples/options
+  - Added new init flags and corrected auth default display (`local`)
+
+Validation completed for item 6 pass:
+
+- `pnpm --filter @hubforge/cli run build` passed
+
+## Latest update (framework AI scheduler provider parity)
+
+Completed framework-level AI scheduler provider integration with OpenAI/Azure support and deterministic mock fallback in generator templates.
+
+- Extended generated AI assistant API route logic in `full-pack.ts` templates:
+  - Added provider-aware AI JSON generation pipeline with support for:
+    - OpenAI Chat Completions (`AI_PROVIDER=openai`)
+    - Azure OpenAI Chat Completions (`AI_PROVIDER=azure`)
+    - Mock fallback (`AI_PROVIDER=mock` or missing/invalid provider credentials)
+  - Added provider calls with guarded parsing and automatic fallback on configuration gaps or runtime API failures
+  - Added `POST /v1/ai/schedule` endpoint to produce scheduler recommendations from dispatcher inputs
+  - Kept `POST /v1/ai-assistant/chat` endpoint and upgraded it to use the same provider/fallback integration path
+- Added environment scaffolding for real provider integration:
+  - `AI_PROVIDER`
+  - `AI_KEY`
+  - `AZURE_OPENAI_ENDPOINT`
+  - `AZURE_OPENAI_DEPLOYMENT`
+  - `AZURE_OPENAI_API_VERSION`
+- Extended generated portal assistant page to include scheduler execution UX:
+  - New scheduling controls and request payload generation
+  - Calls `POST /v1/ai/schedule` and renders recommendation output
+  - Displays whether response came from live provider or mock fallback
+
+Validation completed for framework AI scheduler provider pass:
+
+- `pnpm --filter @hubforge/cli run build` passed
+
+## Latest update (framework AI assistant parity)
+
+Completed framework-level AI assistant parity updates with API endpoints, portal assistant page, and RBAC permission gating in generator templates.
+
+- Added AI assistant route generation and API server registration in `full-pack.ts` templates:
+  - New generated API route: `apps/api/src/routes/ai-assistant.ts`
+  - Endpoints: `GET /v1/ai-assistant/access` and `POST /v1/ai-assistant/chat`
+  - Chat endpoint returns structured assistant responses and execution trace metadata
+- Implemented permission gating for AI assistant endpoints:
+  - Route-level checks enforce `ai-assistant:read` for access probe and `ai-assistant:invoke` for chat invoke
+  - Authorization resolves user identity from authenticated JWT payload and validates tenant role permissions
+- Added AI assistant permission defaults in framework templates:
+  - Permission registry defaults include `ai-assistant:read` and `ai-assistant:invoke`
+  - Seed bootstrap defaults include both AI assistant permissions for initial admin assignment
+- Added portal AI assistant page generation:
+  - New generated route: `apps/portal/app/routes/_app.assistant._index.tsx`
+  - UI includes access check, prompt composer, assistant invoke action, and response rendering
+  - Added sidebar/settings links for AI Assistant navigation
+
+Validation completed for framework AI assistant pass:
+
+- `pnpm --filter @hubforge/cli run build` passed
+
+## Latest update (framework notifications parity)
+
+Completed framework-level notifications parity updates with template persistence, provider abstraction, and delivery log UI in generator templates.
+
+- Added notifications route generation and API server registration in `full-pack.ts` templates:
+  - New generated API route: `apps/api/src/routes/notifications.ts`
+  - Endpoints for template CRUD, delivery log listing, templated send, and compatibility `push`/`email` sends
+- Added notifications provider abstraction in generated API lib:
+  - `dispatchNotification(...)` supports email and push channels
+  - Provider strategy supports firebase/smtp with mock fallbacks for local development or placeholder credentials
+- Added notifications database service generation:
+  - New generated DB service: `packages/db/src/notifications.ts`
+  - `NotificationService` supports template upsert/list/delete and delivery create/sent/failed lifecycle updates
+- Added notifications persistence models in Prisma and baseline migration templates:
+  - `NotificationTemplate`
+  - `NotificationDelivery`
+  - Tenant relations and corresponding SQL table scaffolding
+- Added portal notifications admin page generation:
+  - New generated route: `apps/portal/app/routes/_app.notifications._index.tsx`
+  - UI for template editing, test sending, and delivery log inspection
+  - Added sidebar and settings navigation links to notifications page
+
+Validation completed for framework notifications pass:
+
+- `pnpm --filter @hubforge/cli run build` passed
+
 ## Latest update (framework billing lifecycle parity)
 
 Completed framework-level Stripe webhook and subscription lifecycle updates with local mock fallback in generator templates.

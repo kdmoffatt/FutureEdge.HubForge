@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { getFlagValue, hasFlag, getPositionalArgs } from '../lib/args.js';
 import { isDirectoryEmpty, writeTextFile } from '../lib/fs.js';
 import { getExecutionCwd } from '../lib/runtime.js';
+import { runSeedWorkflow } from './db.js';
 import { scaffoldFullTemplatePack } from '../template-packs/full-pack.js';
 import { scaffoldFullPostgresRlsTemplatePack } from '../template-packs/full-postgres-rls-pack.js';
 import type { InitScaffoldOptions } from '../template-packs/types.js';
@@ -14,6 +15,7 @@ import { loadHooks } from '../lib/plugins.js';
 const dbProviderSchema = z.enum(['sqlite', 'postgres', 'mysql', 'sqlserver']);
 const tenantModeSchema = z.enum(['shared', 'isolated', 'schema-per-tenant', 'db-per-tenant']);
 const aiModeSchema = z.enum(['fastapi', 'none']);
+const aiProviderSchema = z.enum(['mock', 'openai', 'azure']);
 const authModeSchema = z.enum(['external', 'local']);
 const authProviderSchema = z.enum(['zitadel', 'auth0', 'keycloak', 'custom']);
 const templatePackSchema = z.enum(['full', 'full-postgres-rls', 'full-cloud', 'full-local']);
@@ -36,6 +38,8 @@ export async function runInitCommand(args: string[]): Promise<void> {
   const dbProvider = dbProviderSchema.parse(getFlagValue(args, '--db') ?? 'sqlite');
   const tenantMode = tenantModeSchema.parse(getFlagValue(args, '--tenant') ?? 'shared');
   const aiMode = aiModeSchema.parse(getFlagValue(args, '--ai') ?? 'fastapi');
+  const aiProvider = aiProviderSchema.parse(getFlagValue(args, '--ai-provider') ?? 'mock');
+  const aiKey = (getFlagValue(args, '--ai-key') ?? 'change-me').trim() || 'change-me';
   const authMode = authModeSchema.parse(getFlagValue(args, '--auth') ?? 'local');
   const authProvider = authProviderSchema.parse(getFlagValue(args, '--auth-provider') ?? 'zitadel');
   const authServer = hasFlag(args, '--authserver');
@@ -45,6 +49,7 @@ export async function runInitCommand(args: string[]): Promise<void> {
     : templatePackInput === 'full-local'
       ? 'full'
       : templatePackInput;
+  const seed = hasFlag(args, '--seed');
   const force = hasFlag(args, '--force');
 
   if (templatePack === 'full-postgres-rls' && dbProvider !== 'postgres') {
@@ -56,9 +61,12 @@ export async function runInitCommand(args: string[]): Promise<void> {
     dbProvider,
     tenantMode,
     aiMode,
+    aiProvider,
+    aiKey,
     authMode,
     authProvider,
     authServer,
+    seed,
     templatePack,
     force,
   };
@@ -74,15 +82,22 @@ export async function runInitCommand(args: string[]): Promise<void> {
       dbProvider,
       tenantMode,
       aiMode,
+      aiProvider,
       authMode,
       authProvider,
       authServer,
+      seed,
       templatePack,
       force,
     },
   });
 
   await scaffoldProject(options);
+
+  if (seed) {
+    console.log('[hubforge] --seed enabled. Running install + migrate + seed workflow...');
+    await runSeedWorkflow(path.resolve(cwd, projectName));
+  }
 
   await hooks.afterInit?.({
     cwd,
@@ -96,21 +111,26 @@ export async function runInitCommand(args: string[]): Promise<void> {
   console.log(`[hubforge] Template pack: ${templatePack}`);
   console.log(`[hubforge] Database provider: ${dbProvider}`);
   console.log(`[hubforge] Tenant mode: ${tenantMode}`);
+  console.log(`[hubforge] AI provider: ${aiProvider}`);
   console.log(`[hubforge] Auth mode: ${authMode}`);
   console.log(`[hubforge] Auth provider: ${authProvider}`);
   console.log(`[hubforge] Auth server settings scaffold: ${authServer ? 'enabled' : 'disabled'}`);
+  console.log(`[hubforge] Seed workflow: ${seed ? 'completed' : 'skipped'}`);
   console.log('[hubforge] Next steps:');
   console.log(`  cd ${projectName}`);
-  console.log('  pnpm install');
-  console.log('  pnpm infra:up');
-  console.log('  pnpm db:migrate');
+  if (!seed) {
+    console.log('  pnpm install');
+    console.log('  pnpm infra:up');
+    console.log('  pnpm db:migrate');
+    console.log('  pnpm db:seed');
+  }
   console.log('  pnpm dev:api');
   console.log('  pnpm dev:ui');
   console.log('  pnpm dev:portal');
 }
 
 function hasAnyKnownFlag(args: string[]): boolean {
-  const known = ['--template', '--db', '--tenant', '--ai', '--auth', '--auth-provider', '--authserver', '--force'];
+  const known = ['--template', '--db', '--tenant', '--ai', '--ai-provider', '--ai-key', '--auth', '--auth-provider', '--authserver', '--seed', '--force'];
   return known.some((flag) => args.includes(flag));
 }
 
@@ -126,13 +146,30 @@ async function promptForInitOptions(): Promise<{ projectName: string; args: stri
     const db = normalizePromptChoice(await rl.question('Database [sqlite/postgres/mysql/sqlserver] (sqlite): '), 'sqlite');
     const tenant = normalizePromptChoice(await rl.question('Tenant mode [shared/isolated/schema-per-tenant/db-per-tenant] (shared): '), 'shared');
     const ai = normalizePromptChoice(await rl.question('AI mode [fastapi/none] (fastapi): '), 'fastapi');
+    const aiProvider = normalizePromptChoice(await rl.question('AI provider [mock/openai/azure] (mock): '), 'mock');
+    const aiKeyInput = (await rl.question('AI key (change-me): ')).trim();
+    const aiKey = aiKeyInput.length > 0 ? aiKeyInput : 'change-me';
     const auth = normalizePromptChoice(await rl.question('Auth mode [local/external] (local): '), 'local');
     const authProvider = normalizePromptChoice(await rl.question('Auth provider [zitadel/auth0/keycloak/custom] (zitadel): '), 'zitadel');
     const authServerAnswer = normalizePromptChoice(await rl.question('Enable auth-server settings scaffold? [y/N]: '), 'n');
+    const seedAnswer = normalizePromptChoice(await rl.question('Run install + db migrate + db seed now? [y/N]: '), 'n');
 
-    const args: string[] = [projectName, '--template', template, '--db', db, '--tenant', tenant, '--ai', ai, '--auth', auth, '--auth-provider', authProvider];
+    const args: string[] = [
+      projectName,
+      '--template', template,
+      '--db', db,
+      '--tenant', tenant,
+      '--ai', ai,
+      '--ai-provider', aiProvider,
+      '--ai-key', aiKey,
+      '--auth', auth,
+      '--auth-provider', authProvider,
+    ];
     if (authServerAnswer === 'y' || authServerAnswer === 'yes') {
       args.push('--authserver');
+    }
+    if (seedAnswer === 'y' || seedAnswer === 'yes') {
+      args.push('--seed');
     }
     return { projectName, args };
   } finally {
@@ -186,6 +223,7 @@ function buildHubForgeMetadata(options: InitScaffoldOptions): string {
       dbProvider: options.dbProvider,
       tenantMode: options.tenantMode,
       aiMode: options.aiMode,
+      aiProvider: options.aiProvider,
       authMode: options.authMode,
       authProvider: options.authProvider,
       authServer: options.authServer,

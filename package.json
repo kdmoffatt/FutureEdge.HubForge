@@ -7,7 +7,9 @@
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "hubforge": "pnpm --filter @hubforge/cli run cli --",
-    "hubforge:build": "pnpm --filter @hubforge/cli run build"
+    "hubforge:build": "pnpm --filter @hubforge/cli run build",
+    "fieldops:regen": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/fieldops-regenerate.ps1",
+    "fieldops:regen:sh": "bash ./scripts/fieldops-regenerate.sh"
   },
   "engines": {
     "node": ">=20.0.0",

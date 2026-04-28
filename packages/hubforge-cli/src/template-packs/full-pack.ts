@@ -35,6 +35,8 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'auth.ts'), apiAuthRouteTs(options));
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'email-account-settings.ts'), apiEmailAccountSettingsRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'settings.ts'), apiSettingsRouteTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'notifications.ts'), apiNotificationsRouteTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'ai-assistant.ts'), apiAiAssistantRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'rbac.ts'), apiRbacRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'billing.ts'), apiBillingRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'background-jobs.ts'), apiJobsRouteTs());
@@ -63,6 +65,8 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.roles._index.tsx'), portalRolesRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.permissions._index.tsx'), portalPermissionsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.jobs._index.tsx'), portalJobsRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.assistant._index.tsx'), portalAssistantRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.notifications._index.tsx'), portalNotificationsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.audit-log._index.tsx'), portalAuditLogRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.docs._index.tsx'), portalDocsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings._index.tsx'), portalSettingsIndexRoute(options));
@@ -142,6 +146,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'seed-registry.mjs'), dbSeedRegistryScript());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'index.ts'), dbIndexTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'settings.ts'), dbSettingsTs());
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'notifications.ts'), dbNotificationsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'permissions.ts'), dbPermissionsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'billing.ts'), dbBillingTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'jobs.ts'), dbJobsTs());
@@ -494,7 +499,12 @@ BACKGROUND_JOB_BACKEND=redis
 WEBHOOK_ENDPOINT_URL=http://localhost:4000/v1/webhooks/inbound
 SMTP_HOST=localhost
 SMTP_PORT=1025
+AI_PROVIDER=${options.aiProvider}
+AI_KEY=${options.aiKey}
 AI_MODEL=gpt-4o-mini
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
 `;
 }
 
@@ -678,9 +688,6 @@ function apiServerTs(options: InitScaffoldOptions): string {
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { requireAuth } from './lib/auth.js';
-import nodemailer from 'nodemailer';
-import { sendPushNotification } from './lib/notifications.js';
-import { getEmailAccountSettings } from './lib/email-settings-store.js';
 import { enqueueWebhookDelivery, startWebhookWorker } from './lib/webhook-queue.js';
 import { resolveTenantContext } from '@hubforge/tenancy';
 import { registerHealthRoutes } from './routes/health.js';
@@ -689,6 +696,8 @@ import { registerTenancyRoutes } from './routes/tenancy.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerEmailAccountSettingsRoutes } from './routes/email-account-settings.js';
 import { registerSettingsRoutes } from './routes/settings.js';
+import { registerNotificationRoutes } from './routes/notifications.js';
+import { registerAiAssistantRoutes } from './routes/ai-assistant.js';
 import { registerUsersRoutes, registerRolesRoutes, registerPermissionsRoutes } from './routes/rbac.js';
 import { registerBillingRoutes } from './routes/billing.js';
 import { registerJobRoutes } from './routes/background-jobs.js';
@@ -797,6 +806,8 @@ registerTenancyRoutes(app);
 registerAuthRoutes(app);${authServerRegister}
 registerEmailAccountSettingsRoutes(app);
 registerSettingsRoutes(app);
+registerNotificationRoutes(app);
+registerAiAssistantRoutes(app);
 registerUsersRoutes(app);
 registerRolesRoutes(app);
 registerPermissionsRoutes(app);
@@ -809,59 +820,6 @@ app.use('/v1/*', async (c, next) => {
     return;
   }
   await requireAuth(c, next);
-});
-
-app.post('/v1/notifications/push', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as {
-    token?: unknown;
-    title?: unknown;
-    body?: unknown;
-    data?: unknown;
-  };
-
-  if (typeof body.token !== 'string' || typeof body.title !== 'string' || typeof body.body !== 'string') {
-    return c.json({ error: 'token, title and body are required' }, 400);
-  }
-
-  const messageId = await sendPushNotification({
-    token: body.token,
-    notification: { title: body.title, body: body.body },
-    data: typeof body.data === 'object' && body.data ? (body.data as Record<string, string>) : undefined,
-  });
-
-  return c.json({ queued: false, messageId });
-});
-
-app.post('/v1/notifications/email', async (c) => {
-  const tenantId = c.req.header('x-tenant-id');
-  if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
-
-  const body = (await c.req.json().catch(() => ({}))) as { to?: unknown; subject?: unknown; text?: unknown; html?: unknown };
-  if (typeof body.to !== 'string' || typeof body.subject !== 'string') {
-    return c.json({ error: 'to and subject are required' }, 400);
-  }
-
-  const settings = await getEmailAccountSettings(tenantId);
-  if (!settings.enabled) {
-    return c.json({ error: 'Email notifications are disabled for this tenant' }, 400);
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: settings.smtpHost,
-    port: settings.smtpPort,
-    secure: settings.smtpSecure,
-    auth: settings.smtpUser ? { user: settings.smtpUser, pass: settings.smtpPass } : undefined,
-  });
-
-  const info = await transporter.sendMail({
-    from: settings.fromName ? settings.fromName + ' <' + settings.fromEmail + '>' : settings.fromEmail,
-    to: body.to,
-    subject: body.subject,
-    text: typeof body.text === 'string' ? body.text : undefined,
-    html: typeof body.html === 'string' ? body.html : undefined,
-  });
-
-  return c.json({ queued: false, messageId: info.messageId });
 });
 
 app.post('/v1/webhooks/dispatch', async (c) => {
@@ -1036,53 +994,123 @@ export async function requireAuth(c: Context, next: Next): Promise<Response | vo
 }
 
 function apiNotificationsLibTs(): string {
-  return `import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
+  return `import nodemailer from 'nodemailer';
+import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging, type MessagingPayload } from 'firebase-admin/messaging';
+import { getEmailAccountSettings } from './email-settings-store.js';
 
-type PushRequest = {
-  token: string;
-  notification: { title: string; body: string };
-  data: Record<string, string> | undefined;
+export type NotificationChannel = 'email' | 'push';
+
+export type NotificationDispatchInput = {
+  tenantId?: string | null;
+  channel: NotificationChannel;
+  recipient: string;
+  subject?: string;
+  body: string;
+  title?: string;
+  data?: Record<string, string>;
 };
 
-function shouldUseFirebaseProvider(): boolean {
-  const provider = process.env['NOTIFICATION_PROVIDER'] ?? 'firebase';
-  return provider.toLowerCase() === 'firebase';
+export type NotificationDispatchResult = {
+  provider: string;
+  messageId: string;
+  mocked: boolean;
+};
+
+function resolvePushProvider(): 'firebase' | 'mock' {
+  const provider = (process.env['NOTIFICATION_PROVIDER'] ?? 'firebase').toLowerCase();
+  return provider === 'firebase' ? 'firebase' : 'mock';
+}
+
+function resolveEmailProvider(): 'smtp' | 'mock' {
+  const configured = (process.env['NOTIFICATION_EMAIL_PROVIDER'] ?? 'smtp').toLowerCase();
+  return configured === 'smtp' ? 'smtp' : 'mock';
 }
 
 function ensureFirebaseApp(): void {
-  if (!shouldUseFirebaseProvider() || getApps().length > 0) {
-    return;
-  }
+  if (getApps().length > 0) return;
 
   const projectId = process.env['FIREBASE_PROJECT_ID'];
   const clientEmail = process.env['FIREBASE_CLIENT_EMAIL'];
   const privateKey = process.env['FIREBASE_PRIVATE_KEY']?.replace(/\\n/g, '\\n');
-
   if (projectId && clientEmail && privateKey) {
-    initializeApp({
-      credential: cert({ projectId, clientEmail, privateKey }),
-    });
+    initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
     return;
   }
 
   initializeApp({ credential: applicationDefault() });
 }
 
-export async function sendPushNotification(input: PushRequest): Promise<string> {
-  if (!shouldUseFirebaseProvider()) {
-    throw new Error('Only firebase provider is currently implemented in runtime dispatch.');
+function isPlaceholderFirebaseConfig(): boolean {
+  const projectId = process.env['FIREBASE_PROJECT_ID'] ?? '';
+  const clientEmail = process.env['FIREBASE_CLIENT_EMAIL'] ?? '';
+  const privateKey = process.env['FIREBASE_PRIVATE_KEY'] ?? '';
+  return projectId.includes('change-me') || clientEmail.includes('change-me') || privateKey.includes('change-me');
+}
+
+async function sendPush(input: NotificationDispatchInput): Promise<NotificationDispatchResult> {
+  const provider = resolvePushProvider();
+  if (provider !== 'firebase' || isPlaceholderFirebaseConfig()) {
+    return {
+      provider: provider === 'firebase' ? 'mock-firebase' : 'mock',
+      messageId: 'mock-push-' + crypto.randomUUID(),
+      mocked: true,
+    };
   }
 
   ensureFirebaseApp();
-
   const message: MessagingPayload & { token: string } = {
-    token: input.token,
-    notification: input.notification,
+    token: input.recipient,
+    notification: { title: input.title ?? 'Notification', body: input.body },
     ...(input.data ? { data: input.data } : {}),
   };
+  const messageId = await getMessaging().send(message as never);
+  return { provider: 'firebase', messageId, mocked: false };
+}
 
-  return getMessaging().send(message as never);
+async function sendEmail(input: NotificationDispatchInput): Promise<NotificationDispatchResult> {
+  const provider = resolveEmailProvider();
+  if (provider !== 'smtp') {
+    return {
+      provider: 'mock-email',
+      messageId: 'mock-email-' + crypto.randomUUID(),
+      mocked: true,
+    };
+  }
+
+  const tenantId = input.tenantId ?? null;
+  if (!tenantId) {
+    throw new Error('tenantId is required for email notifications');
+  }
+
+  const settings = await getEmailAccountSettings(tenantId);
+  if (!settings.enabled) {
+    throw new Error('Email notifications are disabled for this tenant');
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: settings.smtpHost,
+    port: settings.smtpPort,
+    secure: settings.smtpSecure,
+    auth: settings.smtpUser ? { user: settings.smtpUser, pass: settings.smtpPass } : undefined,
+  });
+
+  const info = await transporter.sendMail({
+    from: settings.fromName ? settings.fromName + ' <' + settings.fromEmail + '>' : settings.fromEmail,
+    to: input.recipient,
+    subject: input.subject ?? 'Notification',
+    text: input.body,
+    html: '<p>' + input.body + '</p>',
+  });
+
+  return { provider: 'smtp', messageId: info.messageId, mocked: false };
+}
+
+export async function dispatchNotification(input: NotificationDispatchInput): Promise<NotificationDispatchResult> {
+  if (input.channel === 'push') {
+    return sendPush(input);
+  }
+  return sendEmail(input);
 }
 `;
 }
@@ -1660,6 +1688,573 @@ export function registerSettingsRoutes(app: Hono): void {
       console.error('Error deleting setting:', err);
       return c.json({ error: 'Failed to delete setting' }, 500);
     }
+  });
+}
+`;
+}
+
+function apiNotificationsRouteTs(): string {
+  return `import type { Hono } from 'hono';
+import { NotificationService } from '@hubforge/db';
+import { dispatchNotification } from '../lib/notifications.js';
+import { requireAuth } from '../lib/auth.js';
+
+function renderTemplate(text: string, variables: Record<string, unknown>): string {
+  return text.replace(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g, (_, key: string) => {
+    const value = variables[key];
+    return value == null ? '' : String(value);
+  });
+}
+
+export function registerNotificationRoutes(app: Hono): void {
+  app.get('/v1/notifications/templates', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const templates = await NotificationService.listTemplates(tenantId);
+    return c.json(templates);
+  });
+
+  app.put('/v1/notifications/templates/:key', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const key = c.req.param('key');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (!key) return c.json({ error: 'key is required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (typeof body['channel'] !== 'string' || (body['channel'] !== 'email' && body['channel'] !== 'push')) {
+      return c.json({ error: 'channel must be "email" or "push"' }, 400);
+    }
+    if (typeof body['body'] !== 'string' || body['body'].trim().length === 0) {
+      return c.json({ error: 'body is required' }, 400);
+    }
+
+    const template = await NotificationService.upsertTemplate({
+      tenantId,
+      key,
+      channel: body['channel'],
+      provider: typeof body['provider'] === 'string' ? body['provider'] : null,
+      subject: typeof body['subject'] === 'string' ? body['subject'] : null,
+      body: body['body'],
+      isActive: typeof body['isActive'] === 'boolean' ? body['isActive'] : true,
+      variablesSchema: typeof body['variablesSchema'] === 'object' && body['variablesSchema']
+        ? (body['variablesSchema'] as Record<string, unknown>)
+        : null,
+    });
+
+    return c.json(template);
+  });
+
+  app.delete('/v1/notifications/templates/:id', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    const id = c.req.param('id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    if (!id) return c.json({ error: 'id is required' }, 400);
+
+    const result = await NotificationService.deleteTemplate(id, tenantId);
+    return c.json({ deleted: result.count > 0 });
+  });
+
+  app.get('/v1/notifications/deliveries', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const limitRaw = Number(c.req.query('limit') ?? 50);
+    const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, Math.floor(limitRaw))) : 50;
+    const deliveries = await NotificationService.listDeliveries(tenantId, limit);
+    return c.json(deliveries);
+  });
+
+  app.post('/v1/notifications/send', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const recipient = body['recipient'];
+    const templateKey = body['templateKey'];
+    const variables = typeof body['variables'] === 'object' && body['variables']
+      ? (body['variables'] as Record<string, unknown>)
+      : {};
+
+    if (typeof recipient !== 'string') {
+      return c.json({ error: 'recipient is required' }, 400);
+    }
+
+    let channel: 'email' | 'push' = 'email';
+    let subject: string | null = null;
+    let contentBody: string;
+    let templateId: string | null = null;
+    let providerHint: string | null = null;
+
+    if (typeof templateKey === 'string' && templateKey.length > 0) {
+      const template = await NotificationService.getTemplateByKey(templateKey, tenantId);
+      if (!template || !template.isActive) {
+        return c.json({ error: 'active notification template not found' }, 404);
+      }
+      channel = template.channel as 'email' | 'push';
+      subject = template.subject ? renderTemplate(template.subject, variables) : null;
+      contentBody = renderTemplate(template.body, variables);
+      templateId = template.id;
+      providerHint = template.provider;
+    } else {
+      const rawChannel = body['channel'];
+      if (rawChannel !== 'email' && rawChannel !== 'push') {
+        return c.json({ error: 'channel is required when templateKey is not provided' }, 400);
+      }
+      channel = rawChannel;
+      subject = typeof body['subject'] === 'string' ? body['subject'] : null;
+      if (typeof body['body'] !== 'string') {
+        return c.json({ error: 'body is required when templateKey is not provided' }, 400);
+      }
+      contentBody = body['body'];
+    }
+
+    const delivery = await NotificationService.createDelivery({
+      tenantId,
+      templateId,
+      channel,
+      provider: providerHint,
+      recipient,
+      subject,
+      body: contentBody,
+      payload: { variables, request: body },
+    });
+
+    try {
+      const result = await dispatchNotification({
+        tenantId,
+        channel,
+        recipient,
+        subject: subject ?? undefined,
+        body: contentBody,
+        ...(channel === 'push' ? { title: subject ?? 'Notification' } : {}),
+      });
+
+      const sent = await NotificationService.markDeliverySent(delivery.id, {
+        provider: result.provider,
+        externalMessageId: result.messageId,
+      });
+      return c.json(sent, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to deliver notification';
+      const failed = await NotificationService.markDeliveryFailed(delivery.id, message);
+      return c.json({ error: message, delivery: failed }, 500);
+    }
+  });
+
+  app.post('/v1/notifications/push', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const token = body['token'];
+    const title = body['title'];
+    const messageBody = body['body'];
+    if (typeof token !== 'string' || typeof title !== 'string' || typeof messageBody !== 'string') {
+      return c.json({ error: 'token, title and body are required' }, 400);
+    }
+
+    const created = await NotificationService.createDelivery({
+      tenantId,
+      channel: 'push',
+      recipient: token,
+      subject: title,
+      body: messageBody,
+      payload: body['data'],
+    });
+
+    try {
+      const sent = await dispatchNotification({
+        tenantId,
+        channel: 'push',
+        recipient: token,
+        title,
+        body: messageBody,
+      });
+
+      const updated = await NotificationService.markDeliverySent(created.id, {
+        provider: sent.provider,
+        externalMessageId: sent.messageId,
+      });
+      return c.json(updated, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Push notification failed';
+      const failed = await NotificationService.markDeliveryFailed(created.id, message);
+      return c.json({ error: message, delivery: failed }, 500);
+    }
+  });
+
+  app.post('/v1/notifications/email', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const to = body['to'];
+    const subject = body['subject'];
+    const messageBody = body['text'] ?? body['body'];
+    if (typeof to !== 'string' || typeof subject !== 'string' || typeof messageBody !== 'string') {
+      return c.json({ error: 'to, subject, and text/body are required' }, 400);
+    }
+
+    const created = await NotificationService.createDelivery({
+      tenantId,
+      channel: 'email',
+      recipient: to,
+      subject,
+      body: messageBody,
+      payload: body,
+    });
+
+    try {
+      const sent = await dispatchNotification({
+        tenantId,
+        channel: 'email',
+        recipient: to,
+        subject,
+        body: messageBody,
+      });
+
+      const updated = await NotificationService.markDeliverySent(created.id, {
+        provider: sent.provider,
+        externalMessageId: sent.messageId,
+      });
+      return c.json(updated, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Email notification failed';
+      const failed = await NotificationService.markDeliveryFailed(created.id, message);
+      return c.json({ error: message, delivery: failed }, 500);
+    }
+  });
+}
+`;
+}
+
+function apiAiAssistantRouteTs(): string {
+  return `import type { Hono } from 'hono';
+import { prisma } from '@hubforge/db';
+import { requireAuth } from '../lib/auth.js';
+
+type AuthPayload = { sub?: unknown; email?: unknown };
+
+type SchedulerRequest = {
+  jobType: string;
+  jobPriority: string;
+  customerLocation: string;
+  requiredSkills: string[];
+  preferredDateTime: string;
+  technicianAvailability: Array<{ technicianId: string; windows: string[] }>;
+  technicianSkillMatch: Array<{ technicianId: string; score: number }>;
+  existingSchedule: Array<{ technicianId: string; slot: string }>;
+  travelDistanceHint?: string;
+  slaDeadline?: string;
+};
+
+type SchedulerResponse = {
+  recommendedTechnician: string;
+  recommendedAppointmentSlot: string;
+  confidence: number;
+  explanation: string;
+  alternatives: string[];
+  risks: string[];
+};
+
+function mockAssistantReply(prompt: string): { message: string; confidence: number; suggestions: string[] } {
+  const summary = prompt.length > 160 ? prompt.slice(0, 160) + '...' : prompt;
+  return {
+    message: 'Assistant suggestion: review tenant context, prioritize high-impact actions, and validate dependent workflows before rollout. Prompt summary: ' + summary,
+    confidence: 0.73,
+    suggestions: [
+      'Confirm required permissions before execution.',
+      'Check related background jobs and notification templates.',
+      'Document outcome for handoff continuity.',
+    ],
+  };
+}
+
+function mockSchedulerRecommendation(input: SchedulerRequest): SchedulerResponse {
+  const topTech = input.technicianSkillMatch
+    .slice()
+    .sort((a, b) => b.score - a.score)[0]?.technicianId ?? input.technicianAvailability[0]?.technicianId ?? 'unassigned-tech';
+
+  const preferred = input.preferredDateTime && !Number.isNaN(new Date(input.preferredDateTime).valueOf())
+    ? new Date(input.preferredDateTime)
+    : new Date(Date.now() + 60 * 60 * 1000);
+
+  return {
+    recommendedTechnician: topTech,
+    recommendedAppointmentSlot: preferred.toISOString(),
+    confidence: 0.74,
+    explanation: 'Mock scheduler selected the highest skill-match technician and preferred slot, adjusted for feasibility.',
+    alternatives: [
+      'Move appointment by +2h to improve route clustering.',
+      'Use secondary technician with similar skills for better SLA buffer.',
+    ],
+    risks: [
+      'Traffic and travel time estimates are placeholder-only in mock mode.',
+      'Real-time technician load is approximated from provided payload.',
+    ],
+  };
+}
+
+function readAiProvider(): 'mock' | 'openai' | 'azure' {
+  const provider = (process.env['AI_PROVIDER'] ?? 'mock').toLowerCase();
+  if (provider === 'openai' || provider === 'azure') return provider;
+  return 'mock';
+}
+
+function hasValidAiKey(value: string | undefined): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  return trimmed.length > 10 && !trimmed.includes('change-me');
+}
+
+async function callOpenAiJson(model: string, apiKey: string, systemPrompt: string, userPrompt: string): Promise<unknown> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + apiKey,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error('OpenAI request failed: ' + res.status + ' ' + text.slice(0, 220));
+  }
+
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('OpenAI response missing message content');
+  return JSON.parse(content);
+}
+
+async function callAzureOpenAiJson(
+  endpoint: string,
+  deployment: string,
+  apiVersion: string,
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<unknown> {
+  const base = endpoint.replace(/\/$/, '');
+  const url = base + '/openai/deployments/' + encodeURIComponent(deployment) + '/chat/completions?api-version=' + encodeURIComponent(apiVersion);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'api-key': apiKey,
+    },
+    body: JSON.stringify({
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error('Azure OpenAI request failed: ' + res.status + ' ' + text.slice(0, 220));
+  }
+
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Azure OpenAI response missing message content');
+  return JSON.parse(content);
+}
+
+async function generateAiJson(systemPrompt: string, userPrompt: string): Promise<{ provider: string; model: string; json: unknown; mocked: boolean; fallbackReason?: string }> {
+  const provider = readAiProvider();
+  const model = process.env['AI_MODEL'] ?? 'gpt-4o-mini';
+  const apiKey = process.env['AI_KEY'];
+
+  if (provider === 'openai') {
+    if (!hasValidAiKey(apiKey)) {
+      return { provider: 'mock', model, json: {}, mocked: true, fallbackReason: 'AI_KEY not configured for OpenAI' };
+    }
+    try {
+      const json = await callOpenAiJson(model, apiKey as string, systemPrompt, userPrompt);
+      return { provider: 'openai', model, json, mocked: false };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenAI failure';
+      return { provider: 'mock', model, json: {}, mocked: true, fallbackReason: message };
+    }
+  }
+
+  if (provider === 'azure') {
+    const endpoint = process.env['AZURE_OPENAI_ENDPOINT'] ?? '';
+    const deployment = process.env['AZURE_OPENAI_DEPLOYMENT'] ?? '';
+    const apiVersion = process.env['AZURE_OPENAI_API_VERSION'] ?? '2024-02-15-preview';
+
+    if (!hasValidAiKey(apiKey) || !endpoint || !deployment || endpoint.includes('your-resource')) {
+      return { provider: 'mock', model, json: {}, mocked: true, fallbackReason: 'Azure OpenAI config missing (AI_KEY/endpoint/deployment)' };
+    }
+
+    try {
+      const json = await callAzureOpenAiJson(endpoint, deployment, apiVersion, apiKey as string, systemPrompt, userPrompt);
+      return { provider: 'azure', model, json, mocked: false };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Azure OpenAI failure';
+      return { provider: 'mock', model, json: {}, mocked: true, fallbackReason: message };
+    }
+  }
+
+  return { provider: 'mock', model, json: {}, mocked: true, fallbackReason: 'AI_PROVIDER is mock' };
+}
+
+async function hasPermission(userId: string, tenantId: string, module: string, action: string): Promise<boolean> {
+  const hit = await prisma.userRole.findFirst({
+    where: {
+      userId,
+      role: {
+        tenantId,
+        permissions: {
+          some: {
+            permission: {
+              module,
+              action,
+            },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  return Boolean(hit);
+}
+
+async function authorizeAiPermission(
+  c: Parameters<Parameters<Hono['get']>[1]>[0],
+  action: 'read' | 'invoke',
+): Promise<{ userId: string; tenantId: string } | Response> {
+  const tenantId = c.req.header('x-tenant-id');
+  if (!tenantId) {
+    return c.json({ error: 'x-tenant-id required' }, 400);
+  }
+
+  const auth = (c as unknown as { get: (key: string) => unknown }).get('auth') as AuthPayload | undefined;
+  const userId = typeof auth?.sub === 'string' ? auth.sub : null;
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const allowed = await hasPermission(userId, tenantId, 'ai-assistant', action);
+  if (!allowed) {
+    return c.json({ error: 'Forbidden', requiredPermission: 'ai-assistant:' + action }, 403);
+  }
+
+  return { userId, tenantId };
+}
+
+export function registerAiAssistantRoutes(app: Hono): void {
+  app.get('/v1/ai-assistant/access', requireAuth, async (c) => {
+    const authz = await authorizeAiPermission(c, 'read');
+    if (authz instanceof Response) return authz;
+    return c.json({ allowed: true, tenantId: authz.tenantId, userId: authz.userId });
+  });
+
+  app.post('/v1/ai-assistant/chat', requireAuth, async (c) => {
+    const authz = await authorizeAiPermission(c, 'invoke');
+    if (authz instanceof Response) return authz;
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const prompt = body['prompt'];
+    if (typeof prompt !== 'string' || prompt.trim().length === 0) {
+      return c.json({ error: 'prompt is required' }, 400);
+    }
+
+    const ai = await generateAiJson(
+      'You are an operations assistant. Return valid JSON with keys: message (string), confidence (number 0..1), suggestions (string[]).',
+      prompt.trim(),
+    );
+
+    const parsed = (typeof ai.json === 'object' && ai.json ? ai.json as Record<string, unknown> : {});
+    const response = parsed['message'] && parsed['suggestions']
+      ? {
+        message: typeof parsed['message'] === 'string' ? parsed['message'] : 'Assistant response unavailable.',
+        confidence: typeof parsed['confidence'] === 'number' ? parsed['confidence'] : 0.68,
+        suggestions: Array.isArray(parsed['suggestions']) ? parsed['suggestions'].map((x) => String(x)) : ['No suggestions returned.'],
+      }
+      : mockAssistantReply(prompt.trim());
+
+    return c.json({
+      ok: true,
+      provider: ai.provider,
+      model: ai.model,
+      prompt,
+      response,
+      mocked: ai.mocked,
+      ...(ai.fallbackReason ? { fallbackReason: ai.fallbackReason } : {}),
+      trace: {
+        tenantId: authz.tenantId,
+        userId: authz.userId,
+        ts: new Date().toISOString(),
+      },
+    });
+  });
+
+  app.post('/v1/ai/schedule', requireAuth, async (c) => {
+    const authz = await authorizeAiPermission(c, 'invoke');
+    if (authz instanceof Response) return authz;
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const input: SchedulerRequest = {
+      jobType: typeof body['jobType'] === 'string' ? body['jobType'] : '',
+      jobPriority: typeof body['jobPriority'] === 'string' ? body['jobPriority'] : 'normal',
+      customerLocation: typeof body['customerLocation'] === 'string' ? body['customerLocation'] : 'unknown',
+      requiredSkills: Array.isArray(body['requiredSkills']) ? body['requiredSkills'].map((v) => String(v)) : [],
+      preferredDateTime: typeof body['preferredDateTime'] === 'string' ? body['preferredDateTime'] : new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      technicianAvailability: Array.isArray(body['technicianAvailability']) ? body['technicianAvailability'] as Array<{ technicianId: string; windows: string[] }> : [],
+      technicianSkillMatch: Array.isArray(body['technicianSkillMatch']) ? body['technicianSkillMatch'] as Array<{ technicianId: string; score: number }> : [],
+      existingSchedule: Array.isArray(body['existingSchedule']) ? body['existingSchedule'] as Array<{ technicianId: string; slot: string }> : [],
+      travelDistanceHint: typeof body['travelDistanceHint'] === 'string' ? body['travelDistanceHint'] : undefined,
+      slaDeadline: typeof body['slaDeadline'] === 'string' ? body['slaDeadline'] : undefined,
+    };
+
+    if (!input.jobType) {
+      return c.json({ error: 'jobType is required' }, 400);
+    }
+
+    const ai = await generateAiJson(
+      'You are a dispatch scheduling assistant. Return valid JSON with keys: recommendedTechnician (string), recommendedAppointmentSlot (ISO string), confidence (number 0..1), explanation (string), alternatives (string[]), risks (string[]).',
+      JSON.stringify(input),
+    );
+
+    const parsed = (typeof ai.json === 'object' && ai.json ? ai.json as Record<string, unknown> : {});
+    const recommendation: SchedulerResponse = parsed['recommendedTechnician'] && parsed['recommendedAppointmentSlot']
+      ? {
+        recommendedTechnician: String(parsed['recommendedTechnician']),
+        recommendedAppointmentSlot: String(parsed['recommendedAppointmentSlot']),
+        confidence: typeof parsed['confidence'] === 'number' ? parsed['confidence'] : 0.65,
+        explanation: typeof parsed['explanation'] === 'string' ? parsed['explanation'] : 'Provider response did not include explanation.',
+        alternatives: Array.isArray(parsed['alternatives']) ? parsed['alternatives'].map((x) => String(x)) : [],
+        risks: Array.isArray(parsed['risks']) ? parsed['risks'].map((x) => String(x)) : [],
+      }
+      : mockSchedulerRecommendation(input);
+
+    return c.json({
+      ok: true,
+      provider: ai.provider,
+      model: ai.model,
+      mocked: ai.mocked,
+      ...(ai.fallbackReason ? { fallbackReason: ai.fallbackReason } : {}),
+      recommendation,
+      trace: {
+        tenantId: authz.tenantId,
+        userId: authz.userId,
+        ts: new Date().toISOString(),
+      },
+    });
   });
 }
 `;
@@ -3240,6 +3835,7 @@ if (process.env['NODE_ENV'] !== 'production') {
 
 export { PrismaClient };
 export { SettingsService, type SettingValue } from './settings.js';
+export { NotificationService } from './notifications.js';
 export { PermissionRegistry } from './permissions.js';
 export { BillingService, type BillingSubscriptionStatus } from './billing.js';
 export { JobService } from './jobs.js';
@@ -3430,6 +4026,10 @@ const defaults: Definition[] = [
   { module: 'roles', action: 'manage', description: 'Create/update roles and permissions' },
   { module: 'settings', action: 'read', description: 'View tenant settings' },
   { module: 'settings', action: 'update', description: 'Update tenant settings' },
+  { module: 'notifications', action: 'read', description: 'View notification templates and delivery history' },
+  { module: 'notifications', action: 'manage', description: 'Manage notification templates and send notifications' },
+  { module: 'ai-assistant', action: 'read', description: 'View AI assistant access and metadata' },
+  { module: 'ai-assistant', action: 'invoke', description: 'Invoke AI assistant chat endpoint' },
   { module: 'billing', action: 'read', description: 'View billing subscriptions and events' },
   { module: 'billing', action: 'manage', description: 'Manage billing lifecycle and mock events' },
   { module: 'jobs', action: 'read', description: 'View background jobs' },
@@ -3445,6 +4045,128 @@ export class PermissionRegistry {
         create: perm,
       });
     }
+  }
+}
+`;
+}
+
+function dbNotificationsTs(): string {
+  return `import { prisma } from './index.js';
+
+export type NotificationTemplateInput = {
+  tenantId: string;
+  key: string;
+  channel: 'email' | 'push';
+  provider?: string | null;
+  subject?: string | null;
+  body: string;
+  isActive?: boolean;
+  variablesSchema?: Record<string, unknown> | null;
+};
+
+export type NotificationDeliveryInput = {
+  tenantId: string;
+  templateId?: string | null;
+  channel: 'email' | 'push';
+  provider?: string | null;
+  recipient: string;
+  subject?: string | null;
+  body: string;
+  payload?: unknown;
+};
+
+export class NotificationService {
+  static async listTemplates(tenantId: string) {
+    return prisma.notificationTemplate.findMany({
+      where: { tenantId },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+  }
+
+  static async getTemplateByKey(key: string, tenantId: string) {
+    return prisma.notificationTemplate.findFirst({
+      where: { tenantId, key },
+    });
+  }
+
+  static async upsertTemplate(input: NotificationTemplateInput) {
+    return prisma.notificationTemplate.upsert({
+      where: { tenantId_key: { tenantId: input.tenantId, key: input.key } },
+      update: {
+        channel: input.channel,
+        provider: input.provider ?? null,
+        subject: input.subject ?? null,
+        body: input.body,
+        isActive: input.isActive ?? true,
+        variablesSchema: input.variablesSchema == null ? null : JSON.stringify(input.variablesSchema),
+      },
+      create: {
+        tenantId: input.tenantId,
+        key: input.key,
+        channel: input.channel,
+        provider: input.provider ?? null,
+        subject: input.subject ?? null,
+        body: input.body,
+        isActive: input.isActive ?? true,
+        variablesSchema: input.variablesSchema == null ? null : JSON.stringify(input.variablesSchema),
+      },
+    });
+  }
+
+  static async deleteTemplate(id: string, tenantId: string) {
+    return prisma.notificationTemplate.deleteMany({
+      where: { id, tenantId },
+    });
+  }
+
+  static async listDeliveries(tenantId: string, limit = 50) {
+    return prisma.notificationDelivery.findMany({
+      where: { tenantId },
+      orderBy: [{ createdAt: 'desc' }],
+      take: limit,
+      include: { template: true },
+    });
+  }
+
+  static async createDelivery(input: NotificationDeliveryInput) {
+    return prisma.notificationDelivery.create({
+      data: {
+        tenantId: input.tenantId,
+        templateId: input.templateId ?? null,
+        channel: input.channel,
+        provider: input.provider ?? null,
+        recipient: input.recipient,
+        subject: input.subject ?? null,
+        body: input.body,
+        payload: input.payload == null ? null : JSON.stringify(input.payload),
+        status: 'queued',
+      },
+    });
+  }
+
+  static async markDeliverySent(id: string, result: { provider: string; externalMessageId: string }) {
+    return prisma.notificationDelivery.update({
+      where: { id },
+      data: {
+        provider: result.provider,
+        externalMessageId: result.externalMessageId,
+        status: 'sent',
+        error: null,
+        sentAt: new Date(),
+      },
+      include: { template: true },
+    });
+  }
+
+  static async markDeliveryFailed(id: string, errorMessage: string) {
+    return prisma.notificationDelivery.update({
+      where: { id },
+      data: {
+        status: 'failed',
+        error: errorMessage,
+      },
+      include: { template: true },
+    });
   }
 }
 `;
@@ -3838,6 +4560,8 @@ async function main() {
     ['roles', 'manage', 'Create/update roles and permissions'],
     ['settings', 'read', 'View tenant settings'],
     ['settings', 'update', 'Update tenant settings'],
+    ['ai-assistant', 'read', 'View AI assistant access and metadata'],
+    ['ai-assistant', 'invoke', 'Invoke AI assistant chat endpoint'],
     ['jobs', 'read', 'View background jobs'],
     ['jobs', 'trigger', 'Trigger background jobs'],
   ];
@@ -3983,6 +4707,8 @@ model Tenant {
   settings     Setting[]
   roles        Role[]
   auditLogs    AuditLog[]
+  notificationTemplates  NotificationTemplate[]
+  notificationDeliveries NotificationDelivery[]
   billingCustomers     BillingCustomer[]
   billingSubscriptions BillingSubscription[]
   billingEvents        BillingEvent[]
@@ -4169,6 +4895,50 @@ model BillingEvent {
 
   @@index([tenantId, receivedAt])
   @@index([externalEventId])
+}
+
+model NotificationTemplate {
+  id              String   @id @default(cuid())
+  tenantId        String
+  key             String
+  channel         String
+  provider        String?
+  subject         String?
+  body            String
+  variablesSchema String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries  NotificationDelivery[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, channel, isActive])
+}
+
+model NotificationDelivery {
+  id                String   @id @default(cuid())
+  tenantId          String
+  templateId        String?
+  channel           String
+  provider          String?
+  recipient         String
+  subject           String?
+  body              String
+  payload           String?
+  status            String
+  externalMessageId String?
+  error             String?
+  sentAt            DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template  NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
 }
 
 model BackgroundJob {
@@ -4379,6 +5149,39 @@ CREATE TABLE IF NOT EXISTS billing_event (
   processed_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS notification_template (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  provider TEXT,
+  subject TEXT,
+  body TEXT NOT NULL,
+  variables_schema TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tenant_id, key)
+);
+
+CREATE TABLE IF NOT EXISTS notification_delivery (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  template_id TEXT,
+  channel TEXT NOT NULL,
+  provider TEXT,
+  recipient TEXT NOT NULL,
+  subject TEXT,
+  body TEXT NOT NULL,
+  payload TEXT,
+  status TEXT NOT NULL,
+  external_message_id TEXT,
+  error TEXT,
+  sent_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS background_job (
   id TEXT PRIMARY KEY,
   tenant_id TEXT,
@@ -4551,6 +5354,8 @@ export default function AppLayout() {
     Roles: 'M12 3l8 4v5c0 5.5-3.6 8.5-8 9.8C7.6 20.5 4 17.5 4 12V7l8-4zm0 5a3 3 0 0 0-3 3c0 1.3.8 2.4 2 2.8V16h2v-2.2a3 3 0 0 0-1-5.8z',
     Permissions: 'M4 4h16v5H4V4zm0 7.5h10v8H4v-8zm12 1h4v7h-4v-7z',
     'Background Jobs': 'M12 6V3L8 7l4 4V8a4 4 0 1 1-4 4H6a6 6 0 1 0 6-6z',
+    'AI Assistant': 'M12 3a8.5 8.5 0 0 0-8.5 8.5v3l-1.5 2v1h20v-1l-1.5-2v-3A8.5 8.5 0 0 0 12 3zm-3 7h2v2H9v-2zm4 0h2v2h-2v-2zm-4 5h6v2H9v-2z',
+    Notifications: 'M12 22a2.2 2.2 0 0 0 2.2-2.2h-4.4A2.2 2.2 0 0 0 12 22zm7-6V11a7 7 0 1 0-14 0v5l-2 2v1h18v-1l-2-2z',
     'Audit Log': 'M6 3h9l5 5v13H6V3zm8 1.5V9h4.5M9 13h8M9 17h8',
     Settings: 'M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.6-2-3.4-2.4 1a7.7 7.7 0 0 0-1.8-1L15 3h-6l-.4 3a7.7 7.7 0 0 0-1.8 1l-2.4-1-2 3.4L4.6 11a7.8 7.8 0 0 0 .1 2l-2.2 1.6 2 3.4 2.4-1a7.7 7.7 0 0 0 1.8 1L9 21h6l.4-3a7.7 7.7 0 0 0 1.8-1l2.4 1 2-3.4L19.4 13zM12 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z',
     'Email Account': 'M3 6h18v12H3V6zm2 2v.4l7 4.2 7-4.2V8l-7 4.2L5 8z',
@@ -4578,7 +5383,9 @@ export default function AppLayout() {
                 { href: '/users', label: 'Users' },
                 { href: '/roles', label: 'Roles' },
                 { href: '/permissions', label: 'Permissions' },
+                { href: '/assistant', label: 'AI Assistant' },
                 { href: '/jobs', label: 'Background Jobs' },
+                { href: '/notifications', label: 'Notifications' },
               ],
             },
             {
@@ -4685,6 +5492,14 @@ export default function SettingsIndexPage() {
         <Link to="/jobs" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
           <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Background Jobs</p>
           <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Monitor queued work and trigger jobs directly from admin.</p>
+        </Link>
+        <Link to="/assistant" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>AI Assistant</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Use the tenant assistant endpoint for guided operations and planning support.</p>
+        </Link>
+        <Link to="/notifications" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Notifications</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Manage templates and inspect delivery outcomes by tenant.</p>
         </Link>
         <Link to="/settings/theme" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
           <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Theme</p>
@@ -5631,6 +6446,509 @@ const buttonStyle = {
   padding: '8px 12px',
   background: '#2563eb',
   color: '#fff',
+  cursor: 'pointer',
+};
+`;
+}
+
+function portalAssistantRoute(): string {
+  return `import { useEffect, useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type AssistantReply = {
+  ok: boolean;
+  provider: string;
+  model: string;
+  mocked: boolean;
+  response: {
+    message: string;
+    confidence: number;
+    suggestions: string[];
+  };
+};
+
+type SchedulerReply = {
+  ok: boolean;
+  provider: string;
+  model: string;
+  mocked: boolean;
+  recommendation: {
+    recommendedTechnician: string;
+    recommendedAppointmentSlot: string;
+    confidence: number;
+    explanation: string;
+    alternatives: string[];
+    risks: string[];
+  };
+};
+
+export default function AssistantPage() {
+  const [prompt, setPrompt] = useState('Generate an operations checklist for completing today\'s deployment safely.');
+  const [reply, setReply] = useState<AssistantReply | null>(null);
+  const [scheduleReply, setScheduleReply] = useState<SchedulerReply | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [jobType, setJobType] = useState('hvac.install');
+  const [jobPriority, setJobPriority] = useState('high');
+  const [preferredDateTime, setPreferredDateTime] = useState(new Date(Date.now() + 2 * 3600 * 1000).toISOString().slice(0, 16));
+
+  useEffect(() => {
+    void checkAccess();
+  }, []);
+
+  async function checkAccess() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const res = await fetch(API + '/v1/ai-assistant/access', {
+      headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+    });
+
+    if (res.ok) {
+      setAccessError(null);
+      return;
+    }
+
+    if (res.status === 403) {
+      setAccessError('You do not have ai-assistant:read permission. Ask an admin to grant access.');
+      return;
+    }
+
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    setAccessError(data.error ?? 'Unable to verify assistant access.');
+  }
+
+  async function askAssistant() {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem('token') ?? '';
+      const tenantId = localStorage.getItem('tenantId') ?? '';
+      const res = await fetch(API + '/v1/ai-assistant/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + token,
+          'x-tenant-id': tenantId,
+        },
+        body: JSON.stringify({ prompt }),
+      });
+
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string; requiredPermission?: string };
+        if (res.status === 403) {
+          setError((data.error ?? 'Forbidden') + (data.requiredPermission ? ' (' + data.requiredPermission + ')' : ''));
+        } else {
+          setError(data.error ?? 'Failed to invoke assistant');
+        }
+        return;
+      }
+
+      setReply((await res.json()) as AssistantReply);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function runScheduler() {
+    setScheduling(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem('token') ?? '';
+      const tenantId = localStorage.getItem('tenantId') ?? '';
+      const res = await fetch(API + '/v1/ai/schedule', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + token,
+          'x-tenant-id': tenantId,
+        },
+        body: JSON.stringify({
+          jobType,
+          jobPriority,
+          customerLocation: 'Downtown, Seattle',
+          requiredSkills: ['hvac', 'electrical'],
+          preferredDateTime: new Date(preferredDateTime).toISOString(),
+          technicianAvailability: [
+            { technicianId: 'tech-101', windows: ['2026-05-01T09:00:00.000Z', '2026-05-01T13:00:00.000Z'] },
+            { technicianId: 'tech-202', windows: ['2026-05-01T10:00:00.000Z', '2026-05-01T15:00:00.000Z'] },
+          ],
+          technicianSkillMatch: [
+            { technicianId: 'tech-101', score: 0.87 },
+            { technicianId: 'tech-202', score: 0.79 },
+          ],
+          existingSchedule: [
+            { technicianId: 'tech-101', slot: '2026-05-01T11:00:00.000Z' },
+          ],
+          travelDistanceHint: 'urban traffic moderate',
+          slaDeadline: '2026-05-01T23:00:00.000Z',
+        }),
+      });
+
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string; requiredPermission?: string };
+        setError((data.error ?? 'Failed to run AI scheduler') + (data.requiredPermission ? ' (' + data.requiredPermission + ')' : ''));
+        return;
+      }
+
+      setScheduleReply((await res.json()) as SchedulerReply);
+    } finally {
+      setScheduling(false);
+    }
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>AI Assistant</h2>
+      <p style={{ marginTop: 0, marginBottom: '1rem', color: '#64748b' }}>
+        Ask the tenant assistant or run AI scheduling recommendations. Provider selection is controlled via AI_PROVIDER with automatic mock fallback.
+      </p>
+
+      {accessError ? (
+        <div style={{ border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b', borderRadius: 10, padding: '0.85rem', marginBottom: '1rem' }}>
+          {accessError}
+        </div>
+      ) : null}
+
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: '1rem', marginBottom: '1rem' }}>
+        <h3 style={{ marginTop: 0 }}>Assistant Chat</h3>
+        <label style={{ display: 'block', fontWeight: 600, fontSize: '0.82rem', color: '#334155', marginBottom: '0.45rem' }}>Prompt</label>
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.currentTarget.value)}
+          rows={4}
+          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: 10, padding: '10px 12px', resize: 'vertical' }}
+        />
+        <div style={{ marginTop: '0.8rem', display: 'flex', gap: '0.55rem' }}>
+          <button onClick={askAssistant} disabled={loading || Boolean(accessError)} style={primaryButtonStyle}>
+            {loading ? 'Thinking...' : 'Ask Assistant'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: '1rem', marginBottom: '1rem' }}>
+        <h3 style={{ marginTop: 0 }}>AI Scheduler</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.6rem' }}>
+          <input value={jobType} onChange={(e) => setJobType(e.currentTarget.value)} placeholder="job type" style={inputStyle} />
+          <select value={jobPriority} onChange={(e) => setJobPriority(e.currentTarget.value)} style={inputStyle}>
+            <option value="low">low</option>
+            <option value="normal">normal</option>
+            <option value="high">high</option>
+            <option value="urgent">urgent</option>
+          </select>
+          <input type="datetime-local" value={preferredDateTime} onChange={(e) => setPreferredDateTime(e.currentTarget.value)} style={inputStyle} />
+        </div>
+        <div style={{ marginTop: '0.8rem', display: 'flex', gap: '0.55rem' }}>
+          <button onClick={runScheduler} disabled={scheduling || Boolean(accessError)} style={primaryButtonStyle}>
+            {scheduling ? 'Scheduling...' : 'Get Recommendation'}
+          </button>
+        </div>
+      </div>
+
+      {error ? <p style={{ margin: '0.7rem 0 0', color: '#b91c1c' }}>{error}</p> : null}
+
+      {reply ? (
+        <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: '1rem', marginBottom: '1rem' }}>
+          <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
+            Provider: {reply.provider} · Model: {reply.model} · {reply.mocked ? 'mock fallback' : 'live provider'} · Confidence: {(reply.response.confidence * 100).toFixed(0)}%
+          </p>
+          <p style={{ margin: '0.75rem 0 0', color: '#0f172a', lineHeight: 1.5 }}>{reply.response.message}</p>
+        </div>
+      ) : null}
+
+      {scheduleReply ? (
+        <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: '1rem' }}>
+          <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
+            Scheduler provider: {scheduleReply.provider} · Model: {scheduleReply.model} · {scheduleReply.mocked ? 'mock fallback' : 'live provider'}
+          </p>
+          <p style={{ margin: '0.7rem 0 0', color: '#0f172a' }}><strong>Technician:</strong> {scheduleReply.recommendation.recommendedTechnician}</p>
+          <p style={{ margin: '0.4rem 0 0', color: '#0f172a' }}><strong>Slot:</strong> {new Date(scheduleReply.recommendation.recommendedAppointmentSlot).toLocaleString()}</p>
+          <p style={{ margin: '0.4rem 0 0', color: '#0f172a' }}><strong>Confidence:</strong> {(scheduleReply.recommendation.confidence * 100).toFixed(0)}%</p>
+          <p style={{ margin: '0.4rem 0 0', color: '#334155' }}>{scheduleReply.recommendation.explanation}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const inputStyle = {
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  padding: '8px 10px',
+};
+
+const primaryButtonStyle = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#2563eb',
+  color: '#fff',
+  cursor: 'pointer',
+};
+`;
+}
+
+function portalNotificationsRoute(): string {
+  return `import { useEffect, useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type TemplateRecord = {
+  id: string;
+  key: string;
+  channel: 'email' | 'push';
+  provider: string | null;
+  subject: string | null;
+  body: string;
+  isActive: boolean;
+};
+
+type DeliveryRecord = {
+  id: string;
+  channel: string;
+  provider: string | null;
+  recipient: string;
+  subject: string | null;
+  status: string;
+  error: string | null;
+  createdAt: string;
+};
+
+export default function NotificationsPage() {
+  const [templates, setTemplates] = useState<TemplateRecord[]>([]);
+  const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
+  const [templateKey, setTemplateKey] = useState('ops.alert');
+  const [channel, setChannel] = useState<'email' | 'push'>('email');
+  const [subject, setSubject] = useState('Action required for {{tenantName}}');
+  const [body, setBody] = useState('Hello {{userName}}, please review item {{itemId}}.');
+  const [recipient, setRecipient] = useState('admin@local-demo.com');
+  const [variablesJson, setVariablesJson] = useState('{"tenantName":"Local Demo","userName":"Admin","itemId":"INC-100"}');
+  const [status, setStatus] = useState('');
+
+  async function load() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const [templatesRes, deliveriesRes] = await Promise.all([
+      fetch(API + '/v1/notifications/templates', { headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId } }),
+      fetch(API + '/v1/notifications/deliveries?limit=40', { headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId } }),
+    ]);
+
+    if (templatesRes.ok) {
+      setTemplates((await templatesRes.json()) as TemplateRecord[]);
+    }
+    if (deliveriesRes.ok) {
+      setDeliveries((await deliveriesRes.json()) as DeliveryRecord[]);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function saveTemplate() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+
+    let variablesSchema: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(variablesJson) as unknown;
+      variablesSchema = typeof parsed === 'object' && parsed ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      setStatus('Variables must be valid JSON');
+      return;
+    }
+
+    const res = await fetch(API + '/v1/notifications/templates/' + encodeURIComponent(templateKey), {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + token,
+        'x-tenant-id': tenantId,
+      },
+      body: JSON.stringify({
+        channel,
+        subject,
+        body,
+        isActive: true,
+        variablesSchema,
+      }),
+    });
+
+    if (!res.ok) {
+      setStatus('Failed to save template');
+      return;
+    }
+
+    setStatus('Template saved');
+    await load();
+  }
+
+  async function sendNotification() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+
+    let variables: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(variablesJson) as unknown;
+      variables = typeof parsed === 'object' && parsed ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      setStatus('Variables must be valid JSON');
+      return;
+    }
+
+    const res = await fetch(API + '/v1/notifications/send', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + token,
+        'x-tenant-id': tenantId,
+      },
+      body: JSON.stringify({
+        recipient,
+        templateKey,
+        variables,
+      }),
+    });
+
+    if (!res.ok) {
+      const failed = (await res.json().catch(() => ({ error: 'Failed to send notification' }))) as { error?: string };
+      setStatus(failed.error ?? 'Failed to send notification');
+      await load();
+      return;
+    }
+
+    setStatus('Notification sent');
+    await load();
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem' }}>Notifications</h2>
+      <p style={{ marginTop: 0, marginBottom: '1rem', color: '#64748b' }}>
+        Manage tenant templates and inspect recent delivery logs.
+      </p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1rem' }}>
+        <div style={cardStyle}>
+          <h3 style={cardTitleStyle}>Template Editor</h3>
+          <div style={formGridStyle}>
+            <label style={labelStyle}>Template key</label>
+            <input value={templateKey} onChange={(e) => setTemplateKey(e.currentTarget.value)} style={inputStyle} />
+            <label style={labelStyle}>Channel</label>
+            <select value={channel} onChange={(e) => setChannel(e.currentTarget.value as 'email' | 'push')} style={inputStyle}>
+              <option value="email">email</option>
+              <option value="push">push</option>
+            </select>
+            <label style={labelStyle}>Subject / title</label>
+            <input value={subject} onChange={(e) => setSubject(e.currentTarget.value)} style={inputStyle} />
+            <label style={labelStyle}>Body</label>
+            <textarea value={body} onChange={(e) => setBody(e.currentTarget.value)} rows={5} style={textareaStyle} />
+            <label style={labelStyle}>Variables (JSON)</label>
+            <textarea value={variablesJson} onChange={(e) => setVariablesJson(e.currentTarget.value)} rows={4} style={textareaStyle} />
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.8rem' }}>
+            <button onClick={saveTemplate} style={primaryButtonStyle}>Save Template</button>
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <h3 style={cardTitleStyle}>Send Test Notification</h3>
+          <label style={labelStyle}>Recipient (email or push token)</label>
+          <input value={recipient} onChange={(e) => setRecipient(e.currentTarget.value)} style={inputStyle} />
+          <div style={{ marginTop: '0.8rem', display: 'flex', gap: '0.5rem' }}>
+            <button onClick={sendNotification} style={primaryButtonStyle}>Send Using Template</button>
+            <button onClick={() => void load()} style={secondaryButtonStyle}>Refresh</button>
+          </div>
+          {status ? <p style={{ margin: '0.8rem 0 0', color: '#0f172a' }}>{status}</p> : null}
+
+          <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '0.95rem', color: '#334155' }}>Template Keys</h4>
+          <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
+            {templates.map((item) => (
+              <div key={item.id} style={{ padding: '0.6rem 0.75rem', borderBottom: '1px solid #f1f5f9' }}>
+                <p style={{ margin: 0, fontWeight: 600 }}>{item.key}</p>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>{item.channel} · {item.isActive ? 'active' : 'inactive'}</p>
+              </div>
+            ))}
+            {templates.length === 0 ? <p style={{ margin: 0, padding: '0.8rem', color: '#64748b' }}>No templates yet.</p> : null}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle, marginTop: '1rem' }}>
+        <h3 style={cardTitleStyle}>Delivery Log</h3>
+        <div style={{ border: '1px solid #e5e7eb', borderRadius: 10 }}>
+          {deliveries.map((d) => (
+            <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '110px 120px 1.4fr 110px 1.2fr', gap: '0.5rem', padding: '0.65rem 0.8rem', borderBottom: '1px solid #f1f5f9' }}>
+              <span style={{ fontWeight: 600 }}>{d.channel}</span>
+              <span style={{ color: '#334155' }}>{d.provider ?? 'n/a'}</span>
+              <span style={{ color: '#0f172a' }}>{d.recipient}</span>
+              <span style={{ color: d.status === 'failed' ? '#b91c1c' : '#166534', fontWeight: 600 }}>{d.status}</span>
+              <span style={{ color: '#64748b', fontSize: '0.82rem' }}>{new Date(d.createdAt).toLocaleString()}</span>
+            </div>
+          ))}
+          {deliveries.length === 0 ? <p style={{ margin: 0, padding: '0.9rem', color: '#64748b' }}>No delivery records yet.</p> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const cardStyle = {
+  border: '1px solid #e5e7eb',
+  borderRadius: 12,
+  background: '#fff',
+  padding: '1rem',
+};
+
+const cardTitleStyle = {
+  marginTop: 0,
+  marginBottom: '0.8rem',
+  fontSize: '1.05rem',
+  color: '#0f172a',
+};
+
+const formGridStyle = {
+  display: 'grid',
+  gap: '0.45rem',
+};
+
+const labelStyle = {
+  fontSize: '0.8rem',
+  fontWeight: 600,
+  color: '#475569',
+};
+
+const inputStyle = {
+  border: '1px solid #d1d5db',
+  borderRadius: 8,
+  padding: '8px 10px',
+};
+
+const textareaStyle = {
+  border: '1px solid #d1d5db',
+  borderRadius: 8,
+  padding: '8px 10px',
+  resize: 'vertical' as const,
+};
+
+const primaryButtonStyle = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#2563eb',
+  color: '#fff',
+  cursor: 'pointer',
+};
+
+const secondaryButtonStyle = {
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#fff',
+  color: '#1f2937',
   cursor: 'pointer',
 };
 `;
