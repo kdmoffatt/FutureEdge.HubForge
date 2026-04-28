@@ -2,6 +2,30 @@
 
 This file tracks implementation changes made in this session.
 
+## Latest update (authserver enable command for existing projects)
+
+Added a dedicated CLI command to enable auth-server scaffolding on existing generated projects without manual metadata editing.
+
+- Added new command implementation:
+  - `packages/hubforge-cli/src/commands/authserver.ts`
+  - Supports `hubforge authserver enable [--target <path>] [--force]`
+  - Workflow:
+    - validates target `hubforge.json`
+    - sets `authServer: true` if not already enabled
+    - invokes existing `upgrade` flow to apply generated auth-server API/portal scaffolding
+    - prints migration next-step guidance
+- Wired command into CLI entrypoint/help in `packages/hubforge-cli/src/cli.ts`
+- Hardened upgrade temp scaffolding path in `packages/hubforge-cli/src/commands/upgrade.ts`:
+  - Sanitizes `hubforge.json.name` before building temporary scaffold directory path
+  - Prevents Windows path failures when metadata name contains an absolute path
+- Updated usage docs in `readme/CLI-Instructions.md`
+
+Validation completed for authserver command pass:
+
+- `pnpm --filter @hubforge/cli run build` passed
+- `pnpm --filter @hubforge/cli run cli -- --help` includes `authserver enable`
+- `pnpm --filter @hubforge/cli run cli -- authserver enable --target ./_tmp_regen_verify --force` passed
+
 ## Latest update (FieldOps regeneration/upgrade script parity)
 
 Completed item 7 by adding a dedicated, repeatable FieldOps regeneration workflow script that upgrades existing sample workspaces and safely applies missing generated modules.

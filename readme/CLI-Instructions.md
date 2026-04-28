@@ -27,6 +27,7 @@ Run from repository root:
   - `pnpm hubforge feature add notifications --type notifications-module --target my-saas`
   - `pnpm hubforge infra --target k8s`
   - `pnpm hubforge db seed --target ./local-dev`
+  - `pnpm hubforge authserver enable --target ./local-dev --force`
   - `pnpm hubforge upgrade --target ../fieldops-workhub-local`
   - `pnpm fieldops:regen`
 
@@ -177,7 +178,17 @@ Generates Kubernetes baseline manifests under `infra/k8s`:
 - Applies missing files (or all template files with `--force`)
 - Supports plugin hooks (`beforeUpgrade`, `afterUpgrade`)
 
-### 6. FieldOps regeneration/upgrade script
+### 6. Authserver command
+
+`hubforge authserver enable [--target <path>] [--force]`
+
+- Enables `authServer` in target `hubforge.json`
+- Runs template upgrade so auth-server route and portal settings scaffolding are applied
+- Use `--force` to overwrite existing template files where needed
+- After enabling, run database migration in the target project:
+  - `pnpm --dir <target> db:migrate`
+
+### 7. FieldOps regeneration/upgrade script
 
 Use the repository script to safely bring an existing FieldOps workspace up to parity with current generators.
 

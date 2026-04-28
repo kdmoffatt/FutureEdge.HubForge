@@ -1,3 +1,4 @@
+import { runAuthServerCommand } from './commands/authserver.js';
 import { runDbCommand } from './commands/db.js';
 import { runFeatureCommand } from './commands/feature.js';
 import { runInfraCommand } from './commands/infra.js';
@@ -8,6 +9,7 @@ const HELP_TEXT = `HubForge CLI
 
 Usage:
   hubforge init <project-name> [options]
+  hubforge authserver enable [--target <path>] [--force]
   hubforge db seed [--target <path>]
   hubforge feature add <feature-name> [options]
   hubforge infra --target k8s
@@ -15,6 +17,7 @@ Usage:
 
 Commands:
   init              Scaffold a new HubForge-ready project baseline.
+  authserver enable Enable auth-server support in an existing HubForge project.
   db seed           Run DB seed workflow in an existing HubForge project.
   feature add       Add a feature skeleton to an existing project.
   infra             Generate infrastructure manifests.
@@ -35,6 +38,10 @@ Init options:
 DB options:
   --target <path>         Path to generated HubForge project (default: current directory)
 
+Authserver options:
+  --target <path>         Path to generated HubForge project (default: current directory)
+  --force                 Overwrite existing files with latest template output
+
 Feature options:
   --type <kind>           api | api-resource | admin-resource | ui | public-page | tenant-module | worker | background-job | auth-flow | billing-module | notifications-module | ai-agent (default: api)
   --target <path>         Path to target project (default: current directory)
@@ -49,6 +56,7 @@ Upgrade options:
 Examples:
   hubforge init my-app --template full --db sqlite --tenant shared
   hubforge init my-app --ai-provider openai --ai-key sk_test_123 --seed
+  hubforge authserver enable --target ./my-app --force
   hubforge db seed --target ./my-app
   hubforge init acme-saas --template full-postgres-rls --db postgres --tenant isolated
   hubforge init enterprise --template full-cloud --db postgres --tenant isolated --auth external --auth-provider zitadel
@@ -84,6 +92,11 @@ export async function runCli(argv: string[]): Promise<void> {
 
   if (command === 'feature') {
     await runFeatureCommand(rest);
+    return;
+  }
+
+  if (command === 'authserver') {
+    await runAuthServerCommand(rest);
     return;
   }
 

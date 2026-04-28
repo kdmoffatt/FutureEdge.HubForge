@@ -92,6 +92,7 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] AI scheduler real provider integration (OpenAI/Azure) with mock fallback
 - [x] CLI enhancements: `hubforge init --seed`, `hubforge db seed`, `--ai-provider`, `--ai-key`
 - [x] FieldOps regeneration/upgrade script to apply all new generated modules safely
+- [x] Existing-project authserver enable command (`hubforge authserver enable --target <path> [--force]`)
 
 ## Platform services checklist (latest scan)
 

@@ -64,7 +64,9 @@ export async function runUpgradeCommand(args: string[]): Promise<void> {
   await hooks.beforeUpgrade?.({ cwd: targetDir, command: 'upgrade', args, targetDir, force });
 
   const tempRoot = await mkdtemp(path.join(tmpdir(), 'hubforge-upgrade-'));
-  const scaffoldDir = path.join(tempRoot, metadata.name ?? 'upgraded-project');
+  const metadataName = (metadata.name ?? '').trim();
+  const safeName = path.basename(metadataName || 'upgraded-project').replace(/[^a-zA-Z0-9._-]/g, '-');
+  const scaffoldDir = path.join(tempRoot, safeName || 'upgraded-project');
 
   const options: InitScaffoldOptions = {
     projectName: path.basename(scaffoldDir),
