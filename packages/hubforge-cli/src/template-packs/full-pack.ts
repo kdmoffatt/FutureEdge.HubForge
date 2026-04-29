@@ -26,6 +26,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'Dockerfile'), apiDockerfile());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'server.ts'), apiServerTs(options));
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'lib', 'auth.ts'), apiAuthLibTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'lib', 'logger.ts'), apiLoggerLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'lib', 'email-settings-store.ts'), apiEmailSettingsStoreLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'lib', 'notifications.ts'), apiNotificationsLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'lib', 'webhook-queue.ts'), apiWebhookQueueLibTs());
@@ -40,6 +41,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'rbac.ts'), apiRbacRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'billing.ts'), apiBillingRouteTs());
   await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'background-jobs.ts'), apiJobsRouteTs());
+  await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'logs.ts'), apiLogsRouteTs());
   if (options.authServer) {
     await writeTextFile(path.join(targetDir, 'apps', 'api', 'src', 'routes', 'auth-server-settings.ts'), apiAuthServerSettingsRouteTs());
   }
@@ -55,6 +57,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes.ts'), rrRoutesTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'app.css'), tailwindCss());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'menu.ts'), portalMenuLibTs(options));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'client-logger.ts'), portalClientLoggerLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'theme.ts'), portalThemeLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'i18n.ts'), portalI18nLibTs());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'lib', 'theme-registry.ts'), portalThemeRegistryTs());
@@ -69,12 +72,14 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.jobs._index.tsx'), portalJobsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.assistant._index.tsx'), portalAssistantRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.notifications._index.tsx'), portalNotificationsRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.logs._index.tsx'), portalLogsViewerRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.profile._index.tsx'), portalProfileRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.audit-log._index.tsx'), portalAuditLogRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.docs._index.tsx'), portalDocsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings._index.tsx'), portalSettingsIndexRoute(options));
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.modules._index.tsx'), portalModulesRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.email-account._index.tsx'), portalEmailAccountSettingsRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.logging._index.tsx'), portalLoggingSettingsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.settings.theme._index.tsx'), portalThemeSettingsRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '$.tsx'), portalNotFoundRoute());
   if (options.authServer) {
@@ -142,6 +147,11 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'packages', 'jobs', 'tsconfig.json'), packageTsConfig());
   await writeTextFile(path.join(targetDir, 'packages', 'jobs', 'src', 'worker.ts'), jobsWorkerTs());
 
+  // packages/job-service
+  await writeTextFile(path.join(targetDir, 'packages', 'job-service', 'package.json'), jobServicePackageJson());
+  await writeTextFile(path.join(targetDir, 'packages', 'job-service', 'tsconfig.json'), jobServiceTsConfig());
+  await writeTextFile(path.join(targetDir, 'packages', 'job-service', 'src', 'worker.ts'), jobServiceWorkerTs());
+
   // packages/db
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'package.json'), dbPackageJson());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'tsconfig.json'), packageTsConfig());
@@ -154,6 +164,7 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'permissions.ts'), dbPermissionsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'billing.ts'), dbBillingTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'jobs.ts'), dbJobsTs());
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'logging.ts'), dbLoggingTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'seed.mjs'), dbSeedScript());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'prisma', 'schema.prisma'), prismaSchema(options));
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'migrations', '0001_init.sql'), initialMigrationSql(options));
@@ -179,6 +190,7 @@ function rootPackageJson(projectName: string): string {
       'dev:all': 'pnpm turbo dev',
       'dev:api': 'pnpm --filter @hubforge/api dev',
       'dev:jobs': 'pnpm --filter @hubforge/jobs dev',
+      'dev:job-service': 'pnpm --filter @hubforge/job-service dev',
       'dev:ui': 'pnpm --filter @hubforge/ui-app dev',
       'dev:portal': 'pnpm --filter @hubforge/portal dev',
       'db:bootstrap': 'pnpm --filter @hubforge/db db:bootstrap',
@@ -390,6 +402,7 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 
 \`\`\`bash
 pnpm dev:api      # API on :4000
+pnpm dev:job-service # decoupled worker on :queue
 pnpm dev:ui       # Public site on :3010
 pnpm dev:portal   # Portal on :3001
 \`\`\`
@@ -430,6 +443,9 @@ hubforge feature billing --type billing-module
 
 # Push notifications module (Firebase)
 hubforge feature alerts --type notifications-module
+
+# Enterprise logging module
+hubforge feature logging --type logging-module
 
 # Auth flow (login/register/callback routes)
 hubforge feature auth --type auth-flow
@@ -705,7 +721,9 @@ import { registerAiAssistantRoutes } from './routes/ai-assistant.js';
 import { registerUsersRoutes, registerRolesRoutes, registerPermissionsRoutes } from './routes/rbac.js';
 import { registerBillingRoutes } from './routes/billing.js';
 import { registerJobRoutes } from './routes/background-jobs.js';
+import { registerLogRoutes } from './routes/logs.js';
 import { PermissionRegistry } from '@hubforge/db';
+import { logEvent } from './lib/logger.js';
 ${authServerImport}
 
 const app = new Hono();
@@ -792,14 +810,26 @@ app.use('*', async (c, next) => {
   }
 
   const latencyMs = Date.now() - startedAt;
-  console.log(JSON.stringify({
-    level: 'info',
-    traceId,
-    method: c.req.method,
-    path: c.req.path,
-    status: c.res.status,
-    latencyMs,
-  }));
+  const tenantId = c.req.header('x-tenant-id') ?? null;
+  const auth = (c as unknown as { get: (key: string) => unknown }).get('auth') as { sub?: string } | undefined;
+  const ip = c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? undefined;
+  const userAgent = c.req.header('user-agent') ?? undefined;
+
+  await logEvent(c.res.status >= 500 ? 'error' : 'info', 'HTTP request completed', {
+    tenantId,
+    userId: auth?.sub ?? null,
+    correlationId: traceId,
+    request: {
+      method: c.req.method,
+      path: c.req.path,
+      ...(ip ? { ip } : {}),
+      ...(userAgent ? { userAgent } : {}),
+    },
+    response: {
+      status: c.res.status,
+      durationMs: latencyMs,
+    },
+  });
 
   return c.res;
 });
@@ -817,6 +847,7 @@ registerRolesRoutes(app);
 registerPermissionsRoutes(app);
 registerBillingRoutes(app);
 registerJobRoutes(app);
+registerLogRoutes(app);
 
 app.use('/v1/*', async (c, next) => {
   if (publicV1Paths.has(c.req.path)) {
@@ -993,6 +1024,207 @@ export async function requireAuth(c: Context, next: Next): Promise<Response | vo
     const message = error instanceof Error ? error.message : 'Invalid token';
     return c.json({ error: 'Unauthorized', details: message }, 401);
   }
+}
+`;
+}
+
+function apiLoggerLibTs(): string {
+  return `import { LogService, type LogLevel } from '@hubforge/db';
+
+const elasticUrl = process.env['ELASTIC_URL'];
+const serviceName = process.env['SERVICE_NAME'] ?? 'hubforge-api';
+
+export type LogContext = {
+  tenantId?: string | null;
+  userId?: string | null;
+  environmentId?: string | null;
+  correlationId?: string | null;
+  request?: {
+    method?: string;
+    path?: string;
+    ip?: string;
+    userAgent?: string;
+    headers?: Record<string, string | undefined>;
+    body?: unknown;
+  };
+  response?: {
+    status?: number;
+    durationMs?: number;
+    body?: unknown;
+  };
+  stack?: string;
+  error?: string;
+  [key: string]: unknown;
+};
+
+async function writeAdvancedLog(level: LogLevel, message: string, details: Record<string, unknown>) {
+  if (!elasticUrl) return;
+  try {
+    await fetch(elasticUrl.replace(/\/$/, '') + '/hubforge-logs/_doc', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        timestamp: new Date().toISOString(),
+        service: serviceName,
+        level,
+        message,
+        ...details,
+      }),
+    });
+  } catch {
+    // Best-effort sink
+  }
+}
+
+export async function logEvent(level: LogLevel, message: string, context: LogContext): Promise<void> {
+  const payload = {
+    tenantId: context.tenantId ?? null,
+    environmentId: context.environmentId ?? null,
+    userId: context.userId ?? null,
+    correlationId: context.correlationId ?? null,
+    request: context.request,
+    response: context.response,
+    stack: context.stack,
+    error: context.error,
+    ...context,
+  };
+
+  const printable = {
+    timestamp: new Date().toISOString(),
+    service: serviceName,
+    level,
+    message,
+    ...payload,
+  };
+  console.log(JSON.stringify(printable));
+
+  if (!context.tenantId) {
+    await writeAdvancedLog(level, message, printable as Record<string, unknown>);
+    return;
+  }
+
+  const settings = await LogService.getSettings(context.tenantId);
+  if (!LogService.shouldLog(settings.level, level)) {
+    return;
+  }
+
+  if (settings.useLocalDb) {
+    const createInput: {
+      tenantId: string;
+      service: string;
+      level: LogLevel;
+      message: string;
+      details: Record<string, unknown>;
+      environmentId?: string | null;
+    } = {
+      tenantId: context.tenantId,
+      service: serviceName,
+      level,
+      message,
+      details: payload,
+      ...(context.environmentId !== undefined ? { environmentId: context.environmentId } : {}),
+    };
+
+    await LogService.create(createInput);
+  }
+
+  if (settings.advancedEnabled) {
+    await writeAdvancedLog(level, message, printable as Record<string, unknown>);
+  }
+}
+`;
+}
+
+function apiLogsRouteTs(): string {
+  return `import type { Hono } from 'hono';
+import { LogService } from '@hubforge/db';
+import { requireAuth } from '../lib/auth.js';
+import { logEvent, type LogContext } from '../lib/logger.js';
+
+type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+function parseLevel(value: unknown): LogLevel {
+  return value === 'error' || value === 'warn' || value === 'info' || value === 'debug' ? value : 'info';
+}
+
+export function registerLogRoutes(app: Hono): void {
+  app.get('/v1/logs/settings', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    return c.json(await LogService.getSettings(tenantId));
+  });
+
+  app.put('/v1/logs/settings', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const patch = {
+      ...(body['level'] !== undefined ? { level: parseLevel(body['level']) } : {}),
+      ...(typeof body['useLocalDb'] === 'boolean' ? { useLocalDb: body['useLocalDb'] } : {}),
+      ...(typeof body['retentionDays'] === 'number' ? { retentionDays: Math.max(1, Math.floor(body['retentionDays'])) } : {}),
+      ...(typeof body['advancedEnabled'] === 'boolean' ? { advancedEnabled: body['advancedEnabled'] } : {}),
+    };
+
+    return c.json(await LogService.setSettings(tenantId, patch));
+  });
+
+  app.get('/v1/logs', requireAuth, async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+
+    const levelRaw = c.req.query('level');
+    const level = levelRaw === 'all' ? 'all' : parseLevel(levelRaw);
+    const service = c.req.query('service') ?? undefined;
+    const from = c.req.query('from');
+    const to = c.req.query('to');
+    const limitRaw = Number(c.req.query('limit') ?? 100);
+
+    const listOptions: { level?: 'all' | LogLevel; service?: string; from?: Date; to?: Date; limit?: number } = {
+      level,
+      limit: Number.isFinite(limitRaw) ? limitRaw : 100,
+      ...(service ? { service } : {}),
+      ...(from ? { from: new Date(from) } : {}),
+      ...(to ? { to: new Date(to) } : {}),
+    };
+
+    const entries = await LogService.list(tenantId, listOptions);
+
+    return c.json(entries);
+  });
+
+  app.post('/v1/logs', async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+
+    const tenantId = typeof body['tenantId'] === 'string'
+      ? body['tenantId']
+      : c.req.header('x-tenant-id') ?? null;
+
+    if (!tenantId) {
+      return c.json({ error: 'tenantId is required' }, 400);
+    }
+
+    if (typeof body['message'] !== 'string' || body['message'].trim().length === 0) {
+      return c.json({ error: 'message is required' }, 400);
+    }
+
+    const level = parseLevel(body['level']);
+    const details = typeof body['details'] === 'object' && body['details'] ? body['details'] : undefined;
+    const context: LogContext = {
+      tenantId,
+      environmentId: typeof body['environmentId'] === 'string' ? body['environmentId'] : c.req.header('x-environment') ?? null,
+      userId: typeof body['userId'] === 'string' ? body['userId'] : null,
+      correlationId: c.req.header('x-trace-id') ?? c.req.header('x-request-id') ?? null,
+      ...(details ? { details } : {}),
+      request: {
+        method: c.req.method,
+        path: c.req.path,
+      },
+    };
+
+    await logEvent(level, body['message'], context);
+    return c.json({ ok: true }, 201);
+  });
 }
 `;
 }
@@ -1322,7 +1554,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import { prisma, SettingsService } from '@hubforge/db';
 
 const secret = new TextEncoder().encode(
-  process.env['AUTH_LOCAL_JWT_SECRET'] ?? 'hubforge-local-dev-secret-change-me',
+  process.env['AUTH_LOCAL_JWT_SECRET'] ?? 'hubforge-local-dev-secret',
 );
 const issuer = 'http://localhost:4000/local-auth';
 const audience = 'hubforge-local';
@@ -1530,61 +1762,27 @@ export function registerAuthRoutes(app: Hono): void {
 }
 
 function portalI18nLibTs(): string {
-  return `import { useState } from 'react';
-import { useNavigate } from 'react-router';
+  return `import { useEffect, useState } from 'react';
 
-const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
-
-export default function LoginPage() {
-  const navigate = useNavigate();
-  const [email, setEmail] = useState('admin@fieldops-demo.com');
-  const [password, setPassword] = useState('Password1!');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const res = await fetch(API + '/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!res.ok) {
-      setLoading(false);
-      setError('Invalid credentials or API not running.');
-      return;
-    }
-
-    const data = (await res.json()) as { token: string; tenantId: string | null };
-    localStorage.setItem('token', data.token);
-    if (data.tenantId) localStorage.setItem('tenantId', data.tenantId);
-    setLoading(false);
-    navigate('/dashboard');
-  }
-
-  return (
+const STORAGE_KEY = 'portal-language';
+const EVENT_NAME = 'portal-language-change';
 
 export type PortalLanguage = 'en' | 'es';
 
-        <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1.5rem' }}>Sign in with database credentials.</p>
-        <form onSubmit={onSubmit}>
-
 const dictionary: Record<PortalLanguage, Record<string, string>> = {
-            <input value={email} onChange={(e) => setEmail(e.currentTarget.value)} type="email" name="email" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, boxSizing: 'border-box' }} />
+  en: {
     'workspace.label': 'Workspace',
-          <div style={{ marginBottom: '1rem' }}>
+    'workspace.title': 'Control Center',
     'nav.section.operations': 'Operations',
-            <input value={password} onChange={(e) => setPassword(e.currentTarget.value)} type="password" name="password" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, boxSizing: 'border-box' }} />
+    'nav.section.platform': 'Platform',
     'nav.dashboard': 'Dashboard',
-          {error && <p style={{ color: '#dc2626', fontSize: '0.8rem', marginBottom: '0.75rem' }}>{error}</p>}
-          <button disabled={loading} type="submit" style={{ width: '100%', background: '#2563eb', color: '#fff', padding: 10, borderRadius: 8, border: 'none', fontWeight: 500, cursor: 'pointer' }}>
-            {loading ? 'Signing in...' : 'Sign in'}
+    'nav.users': 'Users',
+    'nav.roles': 'Roles',
     'nav.permissions': 'Permissions',
     'nav.assistant': 'AI Assistant',
+    'nav.jobs': 'Background Jobs',
+    'nav.notifications': 'Notifications',
+    'nav.audit_log': 'Audit Log',
     'nav.modules': 'Modules',
     'nav.settings': 'Settings',
     'nav.email_account': 'Email Account',
@@ -3276,6 +3474,7 @@ function uiPackageJson(): string {
       '@react-router/node': '^7.0.0',
       '@react-router/serve': '^7.0.0',
       isbot: '^4.0.0',
+      loglevel: '^1.9.2',
       react: '^19.0.0',
       'react-dom': '^19.0.0',
       'react-router': '^7.0.0',
@@ -3527,65 +3726,46 @@ export default function App() {
 }
 
 function uiLandingRoute(): string {
-  return `import { useState } from 'react';
-import { useNavigate } from 'react-router';
+  return `const PORTAL_URL =
+  (import.meta as { env?: Record<string, string> }).env?.['VITE_PORTAL_URL']
+  ?? 'http://localhost:3001';
 
-const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
-
-export default function LoginPage() {
-  const navigate = useNavigate();
-  const [email, setEmail] = useState('admin@local-demo.com');
-  const [password, setPassword] = useState('Password1!');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const res = await fetch(API + '/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!res.ok) {
-      setLoading(false);
-      setError('Invalid credentials or API unavailable.');
-      return;
-    }
-
-    const data = (await res.json()) as { token: string; tenantId: string | null };
-    localStorage.setItem('token', data.token);
-    if (data.tenantId) localStorage.setItem('tenantId', data.tenantId);
-    setLoading(false);
-    navigate('/dashboard');
-  }
-
+export default function IndexRoute() {
   return (
-  ? (process.env['PORTAL_URL'] ?? 'http://localhost:3001')
-  : 'http://localhost:3001';
-
-        <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1.5rem' }}>Sign in with database credentials.</p>
-        <form onSubmit={onSubmit}>
     <main style={{ minHeight: '100vh', background: '#fff', color: '#111827', fontFamily: 'system-ui, sans-serif' }}>
-      <nav style={{ borderBottom: '1px solid #f3f4f6', padding: '0 1.5rem', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, margin: '0 auto' }}>
-            <input value={email} onChange={(e) => setEmail(e.currentTarget.value)} type="email" name="email" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, boxSizing: 'border-box' }} />
-        <a href={PORTAL_URL} style={{ fontSize: 14, background: '#2563eb', color: '#fff', padding: '6px 16px', borderRadius: 8, textDecoration: 'none' }}>
-          <div style={{ marginBottom: '1rem' }}>
+      <nav
+        style={{
+          borderBottom: '1px solid #f3f4f6',
+          padding: '0 1.5rem',
+          height: 56,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          maxWidth: 1200,
+          margin: '0 auto',
+        }}
+      >
+        <strong>HubForge</strong>
+        <a
+          href={PORTAL_URL}
+          style={{ fontSize: 14, background: '#2563eb', color: '#fff', padding: '6px 16px', borderRadius: 8, textDecoration: 'none' }}
+        >
+          Open Portal
         </a>
-            <input value={password} onChange={(e) => setPassword(e.currentTarget.value)} type="password" name="password" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, boxSizing: 'border-box' }} />
+      </nav>
+
       <section style={{ maxWidth: 800, margin: '0 auto', padding: '6rem 1.5rem 4rem', textAlign: 'center' }}>
-          {error && <p style={{ color: '#dc2626', fontSize: '0.8rem', marginBottom: '0.75rem' }}>{error}</p>}
-          <button disabled={loading} type="submit" style={{ width: '100%', background: '#2563eb', color: '#fff', padding: 10, borderRadius: 8, border: 'none', fontWeight: 500, cursor: 'pointer' }}>
-            {loading ? 'Signing in...' : 'Sign in'}
-        </p>
+        <p style={{ letterSpacing: 1, textTransform: 'uppercase', color: '#2563eb', fontSize: 12, marginBottom: 16 }}>FutureEdge Platform</p>
         <h1 style={{ fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', fontWeight: 700, lineHeight: 1.05, marginBottom: '1.5rem' }}>
-        <p style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#9ca3af', textAlign: 'center' }}>Default: admin@local-demo.com / Password1!</p>
+          Build and ship your SaaS foundation faster.
+        </h1>
+        <p style={{ color: '#4b5563', fontSize: '1.125rem', lineHeight: 1.6, marginBottom: 32 }}>
           Opinionated baseline with API, portal, AI, Docker, tenancy, and migrations already in place.
         </p>
-        <a href={PORTAL_URL} style={{ display: 'inline-block', background: '#2563eb', color: '#fff', fontSize: '1.125rem', padding: '12px 32px', borderRadius: 12, textDecoration: 'none' }}>
+        <a
+          href={PORTAL_URL}
+          style={{ display: 'inline-block', background: '#2563eb', color: '#fff', fontSize: '1.125rem', padding: '12px 32px', borderRadius: 12, textDecoration: 'none' }}
+        >
           Get started
         </a>
       </section>
@@ -3748,6 +3928,7 @@ export function getPortalMenuSections(authServerEnabled = false): PortalMenuSect
         { id: 'assistant', label: 'AI Assistant', route: '/assistant', permissions: ['ai-assistant:read'] },
         { id: 'jobs', label: 'Background Jobs', route: '/jobs', permissions: ['jobs:read'] },
         { id: 'notifications', label: 'Notifications', route: '/notifications', permissions: ['notifications:read'] },
+        { id: 'logs', label: 'Logs', route: '/logs', permissions: ['logs:read'] },
       ],
     },
     {
@@ -3757,6 +3938,7 @@ export function getPortalMenuSections(authServerEnabled = false): PortalMenuSect
         { id: 'audit-log', label: 'Audit Log', route: '/audit-log' },
         { id: 'modules', label: 'Modules', route: '/settings/modules', moduleId: 'modules' },
         { id: 'settings', label: 'Settings', route: '/settings' },
+        { id: 'logging-settings', label: 'Logging Settings', route: '/settings/logging', permissions: ['logs:manage'] },
         { id: 'email-account', label: 'Email Account', route: '/settings/email-account' },
         { id: 'theme', label: 'Theme', route: '/settings/theme' },
         ...(authServerEnabled ? [{ id: 'auth-server', label: 'Auth Server', route: '/settings/auth-server' }] : []),
@@ -3847,7 +4029,8 @@ function dbPackageJson(): string {
     type: 'module',
     scripts: {
       'db:bootstrap': 'node ./scripts/bootstrap-postgres.mjs',
-      'db:migrate': 'prisma migrate dev --name init --schema prisma/schema.prisma',
+      'db:migrate': 'prisma migrate deploy --schema prisma/schema.prisma',
+      'db:migrate:dev': 'prisma migrate dev --name init --schema prisma/schema.prisma',
       'db:generate': 'prisma generate --schema prisma/schema.prisma',
       'db:seed': 'node ./scripts/seed.mjs',
       build: 'tsc -p tsconfig.json --pretty false --noEmit',
@@ -4002,6 +4185,178 @@ async function startWorker() {
 }
 
 void startWorker();
+`;
+}
+
+function jobServicePackageJson(): string {
+  const pkg = {
+    name: '@hubforge/job-service',
+    version: '0.1.0',
+    private: true,
+    type: 'module',
+    scripts: {
+      dev: 'tsx watch src/worker.ts',
+      build: 'tsc -p tsconfig.json',
+      typecheck: 'tsc --noEmit -p tsconfig.json',
+      start: 'node dist/worker.js',
+    },
+    dependencies: {
+      '@hubforge/db': 'workspace:*',
+      bullmq: '^5.58.5',
+      ioredis: '^5.4.1',
+    },
+    devDependencies: {
+      '@types/node': '^20.0.0',
+      tsx: '^4.9.0',
+      typescript: '^5.4.0',
+    },
+  };
+
+  return `${JSON.stringify(pkg, null, 2)}\n`;
+}
+
+function jobServiceTsConfig(): string {
+  return `{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "../..",
+    "baseUrl": ".",
+    "paths": {
+      "@hubforge/db": ["../../packages/db/src/index.ts"]
+    },
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src", "../../packages/db/src"]
+}
+`;
+}
+
+function jobServiceWorkerTs(): string {
+  return `import { Queue, Worker } from 'bullmq';
+import IORedis from 'ioredis';
+import { JobService, LogService } from '@hubforge/db';
+
+const queueName = process.env['JOB_SERVICE_QUEUE'] ?? 'hubforge-job-service';
+const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+const queue = new Queue(queueName, { connection });
+
+type QueuePayload = { dbJobId: string };
+
+function parsePayload(input: string | null): unknown {
+  if (!input) return null;
+  try {
+    return JSON.parse(input);
+  } catch {
+    return input;
+  }
+}
+
+async function handleBusinessJob(dbJobId: string): Promise<void> {
+  const job = await JobService.getById(dbJobId, null);
+  if (!job) return;
+
+  if (job.status !== 'queued' && job.status !== 'running') {
+    return;
+  }
+
+  await JobService.markRunning(job.id);
+
+  try {
+    if (job.jobType === 'logging.cleanup') {
+      const purged = await LogService.purgeUsingTenantSettings();
+      await JobService.markCompleted(job.id, { purged });
+      return;
+    }
+
+    const payload = parsePayload(job.payload);
+    await JobService.markCompleted(job.id, {
+      ok: true,
+      processedBy: '@hubforge/job-service',
+      jobType: job.jobType,
+      payload,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await JobService.markFailed(job.id, message);
+  }
+}
+
+async function enqueueQueuedJobs(): Promise<number> {
+  let count = 0;
+  while (true) {
+    const claimed = await JobService.claimNextJob();
+    if (!claimed) break;
+
+    await queue.add('run', { dbJobId: claimed.id }, {
+      jobId: claimed.id,
+      removeOnComplete: true,
+      removeOnFail: 100,
+      attempts: 5,
+      backoff: { type: 'exponential', delay: 1_000 },
+    });
+    count += 1;
+  }
+  return count;
+}
+
+async function enqueueScheduledJobs(): Promise<number> {
+  const due = await JobService.listDueSchedules(new Date());
+  for (const schedule of due) {
+    const queued = await JobService.enqueue({
+      tenantId: schedule.tenantId,
+      scheduleId: schedule.id,
+      jobType: schedule.jobType,
+      payload: schedule.payload ? parsePayload(schedule.payload) : null,
+      priority: 1,
+      scheduledFor: new Date(),
+    });
+
+    await JobService.touchScheduleRun(schedule.id, new Date(Date.now() + 5 * 60 * 1000));
+    await queue.add('run', { dbJobId: queued.id }, { jobId: queued.id, removeOnComplete: true, removeOnFail: 100 });
+  }
+  return due.length;
+}
+
+async function ensureRetentionSweepJob(): Promise<void> {
+  const existing = (await JobService.list(null)).find(
+    (job: { jobType: string; status: string }) =>
+      job.jobType === 'logging.cleanup' && (job.status === 'queued' || job.status === 'running'),
+  );
+  if (!existing) {
+    await JobService.enqueue({ tenantId: null, jobType: 'logging.cleanup', priority: 10 });
+  }
+}
+
+const worker = new Worker<QueuePayload>(
+  queueName,
+  async (job) => {
+    await handleBusinessJob(job.data.dbJobId);
+  },
+  { connection },
+);
+
+worker.on('failed', (_job, error) => {
+  console.error('[job-service] worker job failed', error.message);
+});
+
+async function loop() {
+  const scheduled = await enqueueScheduledJobs();
+  const queued = await enqueueQueuedJobs();
+  await ensureRetentionSweepJob();
+  if (scheduled > 0 || queued > 0) {
+    console.log(\`[job-service] scheduled=\${scheduled} queued=\${queued}\`);
+  }
+}
+
+console.log('[job-service] started', { queueName, redisUrl });
+void loop();
+setInterval(() => {
+  void loop();
+}, 5000);
 `;
 }
 
@@ -4178,6 +4533,7 @@ export { NotificationService } from './notifications.js';
 export { PermissionRegistry } from './permissions.js';
 export { BillingService, type BillingSubscriptionStatus } from './billing.js';
 export { JobService } from './jobs.js';
+export { LogService, type LogLevel, type LoggingSettings } from './logging.js';
 `;
 }
 
@@ -4859,6 +5215,167 @@ export class JobService {
 `;
 }
 
+function dbLoggingTs(): string {
+  return `import { prisma, SettingsService } from './index.js';
+
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+export type LoggingSettings = {
+  level: LogLevel;
+  useLocalDb: boolean;
+  retentionDays: number;
+  advancedEnabled: boolean;
+};
+
+export type LogCreateInput = {
+  tenantId: string;
+  environmentId?: string | null;
+  service: string;
+  level: LogLevel;
+  message: string;
+  details?: unknown;
+};
+
+function serializeDetails(details: unknown): string | undefined {
+  if (details === undefined) return undefined;
+  try {
+    return JSON.stringify(details);
+  } catch {
+    return JSON.stringify({ note: 'unserializable-details' });
+  }
+}
+
+function parseDetails(details: string | null): unknown {
+  if (!details) return null;
+  try {
+    return JSON.parse(details);
+  } catch {
+    return details;
+  }
+}
+
+const DEFAULTS: LoggingSettings = {
+  level: 'info',
+  useLocalDb: true,
+  retentionDays: 30,
+  advancedEnabled: false,
+};
+
+const LEVEL_WEIGHT: Record<LogLevel, number> = {
+  error: 4,
+  warn: 3,
+  info: 2,
+  debug: 1,
+};
+
+function asLogLevel(value: unknown): LogLevel {
+  return value === 'error' || value === 'warn' || value === 'info' || value === 'debug' ? value : DEFAULTS.level;
+}
+
+function normalizeSettings(raw: Record<string, unknown>): LoggingSettings {
+  const retentionValue = Number(raw['retentionDays']);
+  return {
+    level: asLogLevel(raw['level']),
+    useLocalDb: raw['useLocalDb'] !== false,
+    retentionDays: Number.isFinite(retentionValue) && retentionValue > 0 ? Math.floor(retentionValue) : DEFAULTS.retentionDays,
+    advancedEnabled: raw['advancedEnabled'] === true,
+  };
+}
+
+export class LogService {
+  static async getSettings(tenantId: string): Promise<LoggingSettings> {
+    const raw = await SettingsService.getAll(tenantId, 'logging', { scope: 'tenant' });
+    return normalizeSettings(raw);
+  }
+
+  static async setSettings(tenantId: string, patch: Partial<LoggingSettings>): Promise<LoggingSettings> {
+    const next: LoggingSettings = {
+      ...(await LogService.getSettings(tenantId)),
+      ...(patch.level !== undefined ? { level: patch.level } : {}),
+      ...(patch.useLocalDb !== undefined ? { useLocalDb: patch.useLocalDb } : {}),
+      ...(patch.retentionDays !== undefined ? { retentionDays: patch.retentionDays } : {}),
+      ...(patch.advancedEnabled !== undefined ? { advancedEnabled: patch.advancedEnabled } : {}),
+    };
+
+    await SettingsService.set(tenantId, 'logging', 'level', next.level, { scope: 'tenant' });
+    await SettingsService.set(tenantId, 'logging', 'useLocalDb', next.useLocalDb, { scope: 'tenant' });
+    await SettingsService.set(tenantId, 'logging', 'retentionDays', next.retentionDays, { scope: 'tenant' });
+    await SettingsService.set(tenantId, 'logging', 'advancedEnabled', next.advancedEnabled, { scope: 'tenant' });
+
+    return next;
+  }
+
+  static shouldLog(activeLevel: LogLevel, incomingLevel: LogLevel): boolean {
+    return LEVEL_WEIGHT[incomingLevel] >= LEVEL_WEIGHT[activeLevel];
+  }
+
+  static async create(input: LogCreateInput) {
+    const details = serializeDetails(input.details);
+    return prisma.logEntry.create({
+      data: {
+        tenantId: input.tenantId,
+        environmentId: input.environmentId ?? null,
+        service: input.service,
+        level: input.level,
+        message: input.message,
+        details: details ?? null,
+      },
+    });
+  }
+
+  static async list(
+    tenantId: string,
+    options?: { level?: LogLevel | 'all'; service?: string; from?: Date; to?: Date; limit?: number },
+  ) {
+    const limit = Math.min(500, Math.max(1, options?.limit ?? 100));
+    const rows = await prisma.logEntry.findMany({
+      where: {
+        tenantId,
+        ...(options?.level && options.level !== 'all' ? { level: options.level } : {}),
+        ...(options?.service ? { service: options.service } : {}),
+        ...(options?.from || options?.to
+          ? {
+              timestamp: {
+                ...(options.from ? { gte: options.from } : {}),
+                ...(options.to ? { lte: options.to } : {}),
+              },
+            }
+          : {}),
+      },
+      orderBy: { timestamp: 'desc' },
+      take: limit,
+    });
+
+    return rows.map((row) => ({
+      ...row,
+      details: parseDetails(row.details),
+    }));
+  }
+
+  static async purgeOlderThan(tenantId: string, retentionDays: number): Promise<number> {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const result = await prisma.logEntry.deleteMany({
+      where: {
+        tenantId,
+        timestamp: { lt: cutoff },
+      },
+    });
+    return result.count;
+  }
+
+  static async purgeUsingTenantSettings(): Promise<number> {
+    const tenants = await prisma.tenant.findMany({ select: { id: true } });
+    let total = 0;
+    for (const tenant of tenants) {
+      const settings = await LogService.getSettings(tenant.id);
+      total += await LogService.purgeOlderThan(tenant.id, settings.retentionDays);
+    }
+    return total;
+  }
+}
+`;
+}
+
 function dbSeedScript(): string {
   return `#!/usr/bin/env node
 import prismaPkg from '@prisma/client';
@@ -5048,6 +5565,7 @@ model Tenant {
   auditLogs    AuditLog[]
   notificationTemplates  NotificationTemplate[]
   notificationDeliveries NotificationDelivery[]
+  logs LogEntry[]
   billingCustomers     BillingCustomer[]
   billingSubscriptions BillingSubscription[]
   billingEvents        BillingEvent[]
@@ -5278,6 +5796,22 @@ model NotificationDelivery {
 
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
+}
+
+model LogEntry {
+  id            String   @id @default(cuid())
+  tenantId      String
+  environmentId String?
+  service       String
+  level         String
+  message       String
+  details       String?
+  timestamp     DateTime @default(now())
+
+  tenant        Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, timestamp])
+  @@index([service, level, timestamp])
 }
 
 model BackgroundJob {
@@ -5521,6 +6055,20 @@ CREATE TABLE IF NOT EXISTS notification_delivery (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS log_entry (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  environment_id TEXT,
+  service TEXT NOT NULL,
+  level TEXT NOT NULL,
+  message TEXT NOT NULL,
+  details TEXT,
+  timestamp TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_log_entry_tenant_timestamp ON log_entry (tenant_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_log_entry_service_level_timestamp ON log_entry (service, level, timestamp);
+
 CREATE TABLE IF NOT EXISTS background_job (
   id TEXT PRIMARY KEY,
   tenant_id TEXT,
@@ -5658,6 +6206,7 @@ export function getPortalMenuSections(): PortalMenuSection[] {
         { id: 'assistant', label: 'AI Assistant', route: '/assistant', permissions: ['ai-assistant:read'] },
         { id: 'jobs', label: 'Background Jobs', route: '/jobs', permissions: ['jobs:read'] },
         { id: 'notifications', label: 'Notifications', route: '/notifications', permissions: ['notifications:read'] },
+        { id: 'logs', label: 'Logs', route: '/logs', permissions: ['logs:read'] },
       ],
     },
     {
@@ -5667,6 +6216,7 @@ export function getPortalMenuSections(): PortalMenuSection[] {
         { id: 'audit-log', label: 'Audit Log', route: '/audit-log' },
         { id: 'modules', label: 'Modules', route: '/settings/modules', moduleId: 'modules' },
         { id: 'settings', label: 'Settings', route: '/settings' },
+        { id: 'logging-settings', label: 'Logging Settings', route: '/settings/logging', permissions: ['logs:manage'] },
         { id: 'email-account', label: 'Email Account', route: '/settings/email-account' },
         { id: 'theme', label: 'Theme', route: '/settings/theme' },
         ...(AUTH_SERVER_ENABLED ? [{ id: 'auth-server', label: 'Auth Server', route: '/settings/auth-server' }] : []),
@@ -5675,6 +6225,360 @@ export function getPortalMenuSections(): PortalMenuSection[] {
     },
   ];
 }
+`;
+}
+
+function portalClientLoggerLibTs(): string {
+  return `import log from 'loglevel';
+
+type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+const LOCAL_LEVEL_KEY = 'hf-client-log-level';
+
+function activeLevel(): LogLevel {
+  const value = localStorage.getItem(LOCAL_LEVEL_KEY);
+  return value === 'error' || value === 'warn' || value === 'info' || value === 'debug' ? value : 'info';
+}
+
+function levelToNumber(level: LogLevel): number {
+  return level === 'error' ? 4 : level === 'warn' ? 3 : level === 'info' ? 2 : 1;
+}
+
+function shouldSend(level: LogLevel): boolean {
+  return levelToNumber(level) >= levelToNumber(activeLevel());
+}
+
+export function setClientLogLevel(level: LogLevel): void {
+  localStorage.setItem(LOCAL_LEVEL_KEY, level);
+  log.setLevel(level);
+}
+
+export async function sendClientLog(level: LogLevel, message: string, details?: Record<string, unknown>): Promise<void> {
+  if (!shouldSend(level)) return;
+
+  const token = localStorage.getItem('token') ?? '';
+  const tenantId = localStorage.getItem('tenantId') ?? '';
+  if (!tenantId) return;
+
+  try {
+    await fetch(API + '/v1/logs', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: 'Bearer ' + token } : {}),
+        'x-tenant-id': tenantId,
+      },
+      body: JSON.stringify({
+        level,
+        message,
+        tenantId,
+        service: 'portal-web',
+        details,
+      }),
+    });
+  } catch {
+    // Avoid throwing during normal UI flows.
+  }
+}
+
+export function installGlobalClientLogging(): void {
+  log.setLevel(activeLevel());
+
+  window.addEventListener('error', (event) => {
+    void sendClientLog('error', event.message ?? 'window error', {
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+    });
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason instanceof Error ? event.reason.message : String(event.reason ?? 'Unknown rejection');
+    const stack = event.reason instanceof Error ? event.reason.stack : undefined;
+    void sendClientLog('error', 'Unhandled promise rejection', { reason, stack });
+  });
+}
+
+export const clientLogger = {
+  debug: (message: string, details?: Record<string, unknown>) => {
+    log.debug(message, details);
+    void sendClientLog('debug', message, details);
+  },
+  info: (message: string, details?: Record<string, unknown>) => {
+    log.info(message, details);
+    void sendClientLog('info', message, details);
+  },
+  warn: (message: string, details?: Record<string, unknown>) => {
+    log.warn(message, details);
+    void sendClientLog('warn', message, details);
+  },
+  error: (message: string, details?: Record<string, unknown>) => {
+    log.error(message, details);
+    void sendClientLog('error', message, details);
+  },
+};
+`;
+}
+
+function portalLogsViewerRoute(): string {
+  return `import { useEffect, useState } from 'react';
+
+type LogRow = {
+  id: string;
+  service: string;
+  level: 'error' | 'warn' | 'info' | 'debug';
+  message: string;
+  timestamp: string;
+  details?: unknown;
+};
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+export default function LogsViewerPage() {
+  const [rows, setRows] = useState<LogRow[]>([]);
+  const [level, setLevel] = useState<'all' | 'error' | 'warn' | 'info' | 'debug'>('all');
+  const [service, setService] = useState('');
+  const [status, setStatus] = useState('');
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function load() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+
+    const params = new URLSearchParams({ limit: '150' });
+    if (level !== 'all') params.set('level', level);
+    if (service.trim()) params.set('service', service.trim());
+
+    const res = await fetch(API + '/v1/logs?' + params.toString(), {
+      headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+    });
+
+    if (!res.ok) {
+      setStatus('Failed to load logs.');
+      return;
+    }
+
+    setRows((await res.json()) as LogRow[]);
+    setStatus('');
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: '0 0 0.75rem' }}>Logs Viewer</h2>
+      <p style={{ color: '#64748b', marginTop: 0, marginBottom: '1rem' }}>
+        Tenant-scoped enterprise logs across API and Portal events.
+      </p>
+
+      <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, background: '#fff', padding: '1rem', marginBottom: '1rem', display: 'grid', gap: '0.65rem', gridTemplateColumns: '180px 1fr auto' }}>
+        <select value={level} onChange={(e) => setLevel(e.currentTarget.value as typeof level)} style={inputStyle}>
+          <option value="all">All levels</option>
+          <option value="error">error</option>
+          <option value="warn">warn</option>
+          <option value="info">info</option>
+          <option value="debug">debug</option>
+        </select>
+        <input value={service} onChange={(e) => setService(e.currentTarget.value)} placeholder="Filter by service (hubforge-api, portal-web)" style={inputStyle} />
+        <button onClick={() => void load()} style={buttonStyle}>Refresh</button>
+      </div>
+
+      {status ? <p style={{ color: '#b91c1c' }}>{status}</p> : null}
+
+      <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '88px 150px 1fr 160px', gap: '0.5rem', padding: '0.65rem 0.8rem', borderBottom: '1px solid #e5e7eb', fontWeight: 700, color: '#334155' }}>
+          <span>Level</span>
+          <span>Service</span>
+          <span>Message</span>
+          <span>Timestamp</span>
+        </div>
+
+        {rows.map((row) => (
+          <details key={row.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+            <summary style={{ listStyle: 'none', display: 'grid', gridTemplateColumns: '88px 150px 1fr 160px', gap: '0.5rem', padding: '0.6rem 0.8rem', cursor: 'pointer' }}>
+              <span style={pillStyle(row.level)}>{row.level}</span>
+              <span>{row.service}</span>
+              <span>{row.message}</span>
+              <span style={{ color: '#64748b', fontSize: '0.82rem' }}>{new Date(row.timestamp).toLocaleString()}</span>
+            </summary>
+            <pre style={{ margin: 0, padding: '0.6rem 0.8rem 0.9rem', fontSize: '0.76rem', color: '#0f172a', background: '#f8fafc', whiteSpace: 'pre-wrap' }}>
+              {JSON.stringify(row.details ?? {}, null, 2)}
+            </pre>
+          </details>
+        ))}
+
+        {rows.length === 0 ? <p style={{ margin: 0, padding: '1rem', color: '#64748b' }}>No log records found.</p> : null}
+      </div>
+    </div>
+  );
+}
+
+const inputStyle = {
+  border: '1px solid #d1d5db',
+  borderRadius: 8,
+  padding: '8px 10px',
+};
+
+const buttonStyle = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#2563eb',
+  color: '#fff',
+  cursor: 'pointer',
+};
+
+function pillStyle(level: string) {
+  if (level === 'error') return { ...pillBase, background: '#fee2e2', color: '#991b1b' };
+  if (level === 'warn') return { ...pillBase, background: '#fef3c7', color: '#92400e' };
+  if (level === 'debug') return { ...pillBase, background: '#e0e7ff', color: '#3730a3' };
+  return { ...pillBase, background: '#dcfce7', color: '#166534' };
+}
+
+const pillBase = {
+  display: 'inline-flex',
+  borderRadius: 999,
+  padding: '2px 9px',
+  fontSize: '0.75rem',
+  fontWeight: 700,
+  width: 'fit-content',
+};
+`;
+}
+
+function portalLoggingSettingsRoute(): string {
+  return `import { useEffect, useState } from 'react';
+
+type LoggingSettings = {
+  level: 'error' | 'warn' | 'info' | 'debug';
+  useLocalDb: boolean;
+  retentionDays: number;
+  advancedEnabled: boolean;
+};
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+export default function LoggingSettingsPage() {
+  const [settings, setSettings] = useState<LoggingSettings>({
+    level: 'info',
+    useLocalDb: true,
+    retentionDays: 30,
+    advancedEnabled: false,
+  });
+  const [status, setStatus] = useState('');
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function load() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+
+    const res = await fetch(API + '/v1/logs/settings', {
+      headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+    });
+    if (res.ok) {
+      setSettings((await res.json()) as LoggingSettings);
+    }
+  }
+
+  async function save() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+
+    const res = await fetch(API + '/v1/logs/settings', {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + token,
+        'x-tenant-id': tenantId,
+      },
+      body: JSON.stringify(settings),
+    });
+
+    if (!res.ok) {
+      setStatus('Failed to save logging settings.');
+      return;
+    }
+    setStatus('Logging settings saved.');
+  }
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: '0 0 0.75rem' }}>Logging Settings</h2>
+      <p style={{ color: '#64748b', marginTop: 0, marginBottom: '1rem' }}>
+        Local DB logging is enabled by default. Turn on advanced logging to dual-write to Elasticsearch.
+      </p>
+
+      <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, background: '#fff', padding: '1rem', display: 'grid', gap: '0.75rem' }}>
+        <label style={labelStyle}>Log Level</label>
+        <select value={settings.level} onChange={(e) => setSettings({ ...settings, level: e.currentTarget.value as LoggingSettings['level'] })} style={inputStyle}>
+          <option value="error">error</option>
+          <option value="warn">warn</option>
+          <option value="info">info</option>
+          <option value="debug">debug</option>
+        </select>
+
+        <label style={checkRowStyle}>
+          <input type="checkbox" checked={settings.useLocalDb} onChange={(e) => setSettings({ ...settings, useLocalDb: e.currentTarget.checked })} />
+          <span>Use local database logging (default)</span>
+        </label>
+
+        <label style={checkRowStyle}>
+          <input type="checkbox" checked={settings.advancedEnabled} onChange={(e) => setSettings({ ...settings, advancedEnabled: e.currentTarget.checked })} />
+          <span>Enable advanced logging sink (Elasticsearch)</span>
+        </label>
+
+        <label style={labelStyle}>Retention Days</label>
+        <input
+          type="number"
+          min={1}
+          value={settings.retentionDays}
+          onChange={(e) => setSettings({ ...settings, retentionDays: Math.max(1, Number(e.currentTarget.value || 30)) })}
+          style={inputStyle}
+        />
+
+        <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.4rem' }}>
+          <button onClick={save} style={buttonStyle}>Save Settings</button>
+          <button onClick={() => void load()} style={{ ...buttonStyle, background: '#fff', color: '#1e293b', border: '1px solid #cbd5e1' }}>Reload</button>
+        </div>
+        {status ? <p style={{ margin: 0, color: '#0f172a' }}>{status}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+const labelStyle = {
+  fontSize: '0.85rem',
+  color: '#334155',
+  fontWeight: 600,
+};
+
+const inputStyle = {
+  border: '1px solid #d1d5db',
+  borderRadius: 8,
+  padding: '8px 10px',
+};
+
+const checkRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.55rem',
+  color: '#334155',
+  fontSize: '0.9rem',
+};
+
+const buttonStyle = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 12px',
+  background: '#2563eb',
+  color: '#fff',
+  cursor: 'pointer',
+};
 `;
 }
 
@@ -5729,6 +6633,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { getPortalMenuSections } from '../lib/menu';
 import { applyPortalTheme, applyStoredPortalTheme } from '../lib/theme';
 import { useI18n } from '../lib/i18n';
+import { installGlobalClientLogging } from '../lib/client-logger';
 
 const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
 
@@ -5756,6 +6661,7 @@ export default function AppLayout() {
   const sections = useMemo(() => getPortalMenuSections(), []);
 
   useEffect(() => {
+    installGlobalClientLogging();
     applyStoredPortalTheme();
     const rawCollapse = localStorage.getItem('hf_nav_collapsed');
     if (rawCollapse) {
@@ -6020,6 +6926,14 @@ export default function SettingsIndexPage() {
           <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Notifications</p>
           <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Manage templates and inspect delivery outcomes by tenant.</p>
         </Link>
+        <Link to="/logs" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Logs Viewer</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Inspect tenant-scoped API and portal logs with filters.</p>
+        </Link>
+        <Link to="/settings/logging" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Logging Settings</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Manage level, retention, local DB, and advanced sink toggles.</p>
+        </Link>
         <Link to="/settings/theme" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
           <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Theme</p>
           <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Switch built-in admin themes or load a third-party CSS theme URL.</p>
@@ -6157,7 +7071,7 @@ const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_UR
 export default function ModulesSettingsPage() {
   const { t } = useI18n();
   const menu = useMemo(() => getPortalMenuSections(), []);
-  const moduleItems = useMemo(() => menu.flatMap((section) => section.children.filter((item) => item.moduleId || item.id === 'assistant' || item.id === 'notifications' || item.id === 'jobs')), [menu]);
+  const moduleItems = useMemo(() => menu.flatMap((section) => section.children.filter((item) => item.moduleId || item.id === 'assistant' || item.id === 'notifications' || item.id === 'jobs' || item.id === 'logs')), [menu]);
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
 

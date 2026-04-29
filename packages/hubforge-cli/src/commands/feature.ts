@@ -17,6 +17,7 @@ type FeatureType =
   | 'auth-flow'
   | 'billing-module'
   | 'notifications-module'
+  | 'logging-module'
   | 'ai-agent';
 
 export async function runFeatureCommand(args: string[]): Promise<void> {
@@ -219,6 +220,23 @@ export const ${toCamelCase(featureName)}CreatedEvent = z.object({
     return;
   }
 
+  if (type === 'logging-module') {
+    await writeTextFile(
+      path.join(targetDir, 'apps', 'api', 'src', 'routes', `${slug}.ts`),
+      loggingModuleRouteTs(slug, pascal),
+    );
+    await writeTextFile(
+      path.join(targetDir, 'apps', 'portal', 'app', 'routes', `_app.${slug}._index.tsx`),
+      loggingModulePortalViewerPageTsx(title, slug),
+    );
+    await writeTextFile(
+      path.join(targetDir, 'apps', 'portal', 'app', 'routes', `_app.settings.${slug}._index.tsx`),
+      loggingModulePortalSettingsPageTsx(title, slug),
+    );
+    await patchApiServerTs(targetDir, slug, pascal);
+    return;
+  }
+
   if (type === 'ai-agent') {
     await writeTextFile(
       path.join(targetDir, 'apps', 'ai', 'agents', `${slug}_agent.py`),
@@ -292,12 +310,13 @@ function parseType(value: string): FeatureType {
     || value === 'auth-flow'
     || value === 'billing-module'
     || value === 'notifications-module'
+    || value === 'logging-module'
     || value === 'ai-agent'
   ) {
     return value;
   }
 
-  throw new Error(`Invalid feature type '${value}'. Use api, api-resource, admin-resource, ui, public-page, tenant-module, worker, background-job, auth-flow, billing-module, notifications-module, or ai-agent.`);
+  throw new Error(`Invalid feature type '${value}'. Use api, api-resource, admin-resource, ui, public-page, tenant-module, worker, background-job, auth-flow, billing-module, notifications-module, logging-module, or ai-agent.`);
 }
 
 function adminResourceRouteTs(slug: string, pascal: string): string {
@@ -797,6 +816,87 @@ function notificationsWorkerPy(pascal: string): string {
 
 def run() -> None:
     print('Dispatching queued notifications via configured provider')
+`;
+}
+
+function loggingModuleRouteTs(slug: string, pascal: string): string {
+  return `import type { Hono } from 'hono';
+
+export function register${pascal}Routes(app: Hono): void {
+  app.get('/v1/${slug}/health', (c) => c.json({ ok: true, module: '${slug}' }));
+  app.post('/v1/${slug}', async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { level?: unknown; message?: unknown; details?: unknown };
+    const level = body.level === 'error' || body.level === 'warn' || body.level === 'debug' ? body.level : 'info';
+    const message = typeof body.message === 'string' && body.message.trim() ? body.message : 'Log event';
+    return c.json({ ok: true, level, message, details: body.details ?? null }, 201);
+  });
+}
+`;
+}
+
+function loggingModulePortalViewerPageTsx(title: string, slug: string): string {
+  return `import { useEffect, useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type LogRecord = { id?: string; level?: string; message?: string; timestamp?: string };
+
+export default function ${toPascalCase(slug)}ViewerPage() {
+  const [rows, setRows] = useState<LogRecord[]>([]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    fetch(API + '/v1/${slug}', { headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId } })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setRows(Array.isArray(data) ? data : []));
+  }, []);
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 0.75rem' }}>${title} Viewer</h2>
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff' }}>
+        {rows.map((row, index) => (
+          <div key={row.id ?? index} style={{ padding: '0.65rem 0.85rem', borderBottom: '1px solid #f1f5f9' }}>
+            <strong>{row.level ?? 'info'}</strong> {row.message ?? 'log event'}
+          </div>
+        ))}
+        {rows.length === 0 ? <p style={{ margin: 0, padding: '0.85rem', color: '#64748b' }}>No logs yet.</p> : null}
+      </div>
+    </div>
+  );
+}
+`;
+}
+
+function loggingModulePortalSettingsPageTsx(title: string, slug: string): string {
+  return `import { useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+export default function ${toPascalCase(slug)}SettingsPage() {
+  const [status, setStatus] = useState('');
+
+  async function save() {
+    const token = localStorage.getItem('token') ?? '';
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const res = await fetch(API + '/v1/${slug}', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+      body: JSON.stringify({ level: 'info', message: '${title} settings saved' }),
+    });
+    setStatus(res.ok ? 'Saved' : 'Failed');
+  }
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 0.75rem' }}>${title} Settings</h2>
+      <p style={{ color: '#64748b' }}>Configure defaults for logging module behavior.</p>
+      <button onClick={save} style={{ border: 'none', borderRadius: 8, background: '#2563eb', color: '#fff', padding: '8px 12px', cursor: 'pointer' }}>Save</button>
+      {status ? <p>{status}</p> : null}
+    </div>
+  );
+}
 `;
 }
 

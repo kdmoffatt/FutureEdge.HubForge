@@ -25,6 +25,7 @@ Run from repository root:
   - `pnpm hubforge feature add sync-orders --type background-job --target my-saas`
   - `pnpm hubforge feature add auth --type auth-flow --target my-saas`
   - `pnpm hubforge feature add notifications --type notifications-module --target my-saas`
+  - `pnpm hubforge feature add logging --type logging-module --target my-saas`
   - `pnpm hubforge infra --target k8s`
   - `pnpm hubforge db seed --target ./local-dev`
   - `pnpm hubforge authserver enable --target ./local-dev --force`
@@ -126,6 +127,7 @@ Options:
   - `auth-flow`
   - `billing-module`
   - `notifications-module`
+  - `logging-module`
   - `ai-agent`
 - `--target <path>` target project path (defaults to current directory)
 
@@ -143,6 +145,7 @@ Generated output by type:
 - `auth-flow`: auth route + auth client helper scaffold with provider introspection
 - `billing-module`: billing route + billing events + portal billing page + server patch
 - `notifications-module`: notifications package + API route + worker scaffold + server patch
+- `logging-module`: logging API route + portal logs viewer/settings pages + server patch
 - `ai-agent`: AI agent Python scaffold + API invoke route + server patch
 
 Unified seeding baseline:

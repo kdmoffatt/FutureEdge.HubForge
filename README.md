@@ -243,6 +243,8 @@ The browser-side auth client (`packages/auth-client`) wraps OIDC redirect flows 
 | **Redis client** | [IORedis](https://github.com/redis/ioredis) |
 | **Job processor** | In-process worker started at API boot |
 
+HubForge projects can run jobs in-process or in a decoupled worker package. The decoupled pattern keeps API latency isolated and is the recommended production deployment model.
+
 The generated webhook retry queue (`apps/api/src/lib/webhook-queue.ts`) provides:
 
 - `enqueueWebhookDelivery(job)` — adds a webhook delivery job to the BullMQ queue
@@ -428,6 +430,7 @@ hubforge feature crm --type tenant-module
 hubforge feature landing --type public-page
 hubforge feature stripe --type billing-module
 hubforge feature push-alerts --type notifications-module
+hubforge feature logging --type logging-module
 hubforge feature embeddings --type ai-agent
 hubforge feature users --type auth-flow
 
@@ -457,6 +460,8 @@ Detailed implementation and usage guides are available under `docs/`:
 - `docs/features/settings.md`
 - `docs/features/rbac.md`
 - `docs/features/notifications.md`
+- `docs/features/logging.md`
+- `docs/features/job-service.md`
 - `docs/features/billing.md`
 - `docs/features/ai-assistant.md`
 - `docs/features/background-jobs.md`
