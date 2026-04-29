@@ -1530,27 +1530,61 @@ export function registerAuthRoutes(app: Hono): void {
 }
 
 function portalI18nLibTs(): string {
-  return `import { useEffect, useState } from 'react';
+  return `import { useState } from 'react';
+import { useNavigate } from 'react-router';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+export default function LoginPage() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('admin@fieldops-demo.com');
+  const [password, setPassword] = useState('Password1!');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    const res = await fetch(API + '/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!res.ok) {
+      setLoading(false);
+      setError('Invalid credentials or API not running.');
+      return;
+    }
+
+    const data = (await res.json()) as { token: string; tenantId: string | null };
+    localStorage.setItem('token', data.token);
+    if (data.tenantId) localStorage.setItem('tenantId', data.tenantId);
+    setLoading(false);
+    navigate('/dashboard');
+  }
+
+  return (
 
 export type PortalLanguage = 'en' | 'es';
 
-const STORAGE_KEY = 'hf_lang';
-const EVENT_NAME = 'hf-language-change';
+        <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1.5rem' }}>Sign in with database credentials.</p>
+        <form onSubmit={onSubmit}>
 
 const dictionary: Record<PortalLanguage, Record<string, string>> = {
-  en: {
+            <input value={email} onChange={(e) => setEmail(e.currentTarget.value)} type="email" name="email" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, boxSizing: 'border-box' }} />
     'workspace.label': 'Workspace',
-    'workspace.title': 'Control Center',
+          <div style={{ marginBottom: '1rem' }}>
     'nav.section.operations': 'Operations',
-    'nav.section.platform': 'Platform',
+            <input value={password} onChange={(e) => setPassword(e.currentTarget.value)} type="password" name="password" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, boxSizing: 'border-box' }} />
     'nav.dashboard': 'Dashboard',
-    'nav.users': 'Users',
-    'nav.roles': 'Roles',
+          {error && <p style={{ color: '#dc2626', fontSize: '0.8rem', marginBottom: '0.75rem' }}>{error}</p>}
+          <button disabled={loading} type="submit" style={{ width: '100%', background: '#2563eb', color: '#fff', padding: 10, borderRadius: 8, border: 'none', fontWeight: 500, cursor: 'pointer' }}>
+            {loading ? 'Signing in...' : 'Sign in'}
     'nav.permissions': 'Permissions',
     'nav.assistant': 'AI Assistant',
-    'nav.jobs': 'Background Jobs',
-    'nav.notifications': 'Notifications',
-    'nav.audit_log': 'Audit Log',
     'nav.modules': 'Modules',
     'nav.settings': 'Settings',
     'nav.email_account': 'Email Account',
