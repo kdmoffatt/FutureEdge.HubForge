@@ -53,7 +53,7 @@ run_hubforge() {
 }
 
 FEATURES=()
-if [[ "$FEATURE_PROFILE" == "fieldops" ]]; then
+if [[ "$FEATURE_PROFILE" == "operations-saas" ]]; then
   FEATURES=(
     "marketing-site|public-page|apps/ui/app/routes/marketing-site.tsx"
     "billing|billing-module|apps/portal/app/routes/_app.billing._index.tsx"
@@ -118,6 +118,7 @@ if [[ "$SKIP_VALIDATION" != "true" ]]; then
   run_step "Install dependencies in target project" --dir "$TARGET_ABSOLUTE" install
   run_step "Run target DB migrate" --dir "$TARGET_ABSOLUTE" db:migrate
   run_step "Run target DB seed" --dir "$TARGET_ABSOLUTE" db:seed
+  run_step "Run target validation checks" hubforge validate --target "$TARGET_ABSOLUTE" --skip-install
 fi
 
 echo "[hubforge-regenerate] Complete. Applied=$APPLIED Skipped=$SKIPPED"

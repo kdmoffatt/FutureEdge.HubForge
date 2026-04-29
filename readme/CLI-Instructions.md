@@ -29,8 +29,9 @@ Run from repository root:
   - `pnpm hubforge infra --target k8s`
   - `pnpm hubforge db seed --target ./local-dev`
   - `pnpm hubforge authserver enable --target ./local-dev --force`
-  - `pnpm hubforge upgrade --target ../fieldops-workhub-local`
-  - `pnpm hubforge:regen -- --target ../fieldops-workhub-local --skip-validation`
+  - `pnpm hubforge upgrade --target ../sample-workspace`
+  - `pnpm hubforge validate --target ../sample-workspace`
+  - `pnpm hubforge:regen -- --target ../sample-workspace --skip-validation`
 
 ## Commands
 
@@ -191,7 +192,21 @@ Generates Kubernetes baseline manifests under `infra/k8s`:
 - After enabling, run database migration in the target project:
   - `pnpm --dir <target> db:migrate`
 
-### 7. Workspace regeneration/upgrade script
+### 7. Validate command
+
+`hubforge validate [--target <path>] [--quick] [--skip-install]`
+
+- Validates required generated project files exist
+- Optionally runs install/build/typecheck checks for API and Portal
+- Use `--quick` for structure-only validation
+
+Flags:
+
+- `--target <path>` defaults to `.`
+- `--quick` checks required files only
+- `--skip-install` skips install before build/typecheck
+
+### 8. Workspace regeneration/upgrade script
 
 Use the repository script to safely bring an existing generated workspace up to parity with current generators.
 
@@ -216,12 +231,7 @@ Flags:
 - `--initialize-if-missing` scaffold target first if `hubforge.json` is missing
 - `--force-upgrade` passes `--force` to `hubforge upgrade`
 - `--skip-validation` skips install/migrate/seed
-- `--feature-profile fieldops` applies the FieldOps curated feature bundle
-
-Legacy aliases remain available:
-
-- `pnpm fieldops:regen`
-- `pnpm fieldops:regen:sh`
+- `--feature-profile operations-saas` applies a curated operations SaaS feature bundle
 
 ## Documentation discipline
 

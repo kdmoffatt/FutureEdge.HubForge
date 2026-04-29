@@ -66,6 +66,17 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', 'login.tsx'), portalLoginRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.tsx'), portalAppLayout(options));
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.dashboard._index.tsx'), portalDashboardRoute());
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.customers._index.tsx'), portalModuleOverviewRoute('Customers', 'Manage customer profiles, service history, addresses, and account lifecycle.', ['Create customer records', 'Track open service items', 'Review billing and SLA context']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.technicians._index.tsx'), portalModuleOverviewRoute('Technicians', 'Coordinate technician assignments, skills, capacity, and service territories.', ['Monitor utilization', 'Match skills to work orders', 'Balance route workload']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.appointments._index.tsx'), portalModuleOverviewRoute('Appointments', 'Schedule and track upcoming onsite and remote service appointments.', ['Calendar visibility', 'Conflict detection', 'Status progression']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.dispatch._index.tsx'), portalModuleOverviewRoute('Dispatch Board', 'Run real-time dispatch operations with SLA-aware prioritization.', ['Queue by urgency', 'Drag-and-drop assignment', 'Escalation monitoring']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.inventory._index.tsx'), portalModuleOverviewRoute('Inventory', 'Track stocked parts, truck inventory, and replenishment operations.', ['Stock availability', 'Part reservations', 'Reorder signals']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.invoices._index.tsx'), portalModuleOverviewRoute('Invoices', 'Generate and monitor invoices, payment status, and receivables activity.', ['Invoice lifecycle', 'Aging visibility', 'Collections workflow']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.billing._index.tsx'), portalModuleOverviewRoute('Subscriptions & Billing', 'Manage customer plans, renewals, and tenant billing controls.', ['Plan assignment', 'Renewal tracking', 'Billing audit trail']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.background-jobs._index.tsx'), portalModuleOverviewRoute('Background Jobs', 'Operate asynchronous queues, retries, and scheduled task execution.', ['Retry and failure queues', 'Schedule visibility', 'Execution diagnostics']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.reports._index.tsx'), portalModuleOverviewRoute('Reports', 'Analyze operational throughput, revenue, and technician performance.', ['KPI snapshots', 'Utilization trends', 'Profitability by account']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.workflows._index.tsx'), portalModuleOverviewRoute('Workflows', 'Automate recurring service processes and event-driven business logic.', ['Rule orchestration', 'State transitions', 'Exception handling']));
+  await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.webhooks._index.tsx'), portalModuleOverviewRoute('Webhooks', 'Observe outbound integrations and webhook delivery reliability.', ['Endpoint health', 'Retry monitoring', 'Payload diagnostics']));
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.users._index.tsx'), portalUsersRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.roles._index.tsx'), portalRolesRoute());
   await writeTextFile(path.join(targetDir, 'apps', 'portal', 'app', 'routes', '_app.permissions._index.tsx'), portalPermissionsRoute());
@@ -3554,21 +3565,21 @@ function tailwindCss(): string {
 
 :root {
   --hf-font: "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, sans-serif;
-  --hf-primary: #2563eb;
-  --hf-primary-hover: #1d4ed8;
-  --hf-primary-soft: rgba(37, 99, 235, 0.12);
-  --hf-surface: rgba(255, 255, 255, 0.92);
-  --hf-surface-alt: #f4f7fb;
-  --hf-surface-muted: #eef3f8;
-  --hf-foreground: #172033;
-  --hf-muted: #617089;
-  --hf-border: rgba(148, 163, 184, 0.22);
-  --hf-border-strong: rgba(100, 116, 139, 0.32);
-  --hf-sidebar: linear-gradient(180deg, #0f172a 0%, #111c34 100%);
-  --hf-sidebar-text: #afbdd4;
-  --hf-sidebar-active: rgba(255, 255, 255, 0.08);
-  --hf-sidebar-active-text: #f8fbff;
-  --hf-header: rgba(255, 255, 255, 0.82);
+  --hf-primary: #845adf;
+  --hf-primary-hover: #6f43cc;
+  --hf-primary-soft: rgba(132, 90, 223, 0.12);
+  --hf-surface: #ffffff;
+  --hf-surface-alt: #f0f1f7;
+  --hf-surface-muted: #f8f8fb;
+  --hf-foreground: #2a2f3e;
+  --hf-muted: #8c9097;
+  --hf-border: #e9edf4;
+  --hf-border-strong: #d7ddea;
+  --hf-sidebar: #ffffff;
+  --hf-sidebar-text: #536485;
+  --hf-sidebar-active: #f0ebfc;
+  --hf-sidebar-active-text: #845adf;
+  --hf-header: #ffffff;
   --hf-card-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
   --hf-card-shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.05);
 }
@@ -3585,8 +3596,8 @@ body {
 body {
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 28%),
-    radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 26%),
+    radial-gradient(circle at top left, rgba(132, 90, 223, 0.12), transparent 28%),
+    radial-gradient(circle at top right, rgba(35, 183, 229, 0.10), transparent 24%),
     var(--hf-surface-alt);
   color: var(--hf-foreground);
   font-family: var(--hf-font);
@@ -6200,13 +6211,24 @@ export function getPortalMenuSections(): PortalMenuSection[] {
       label: 'Operations',
       children: [
         { id: 'dashboard', label: 'Dashboard', route: '/dashboard' },
+        { id: 'customers', label: 'Customers', route: '/customers', moduleId: 'customers' },
+        { id: 'technicians', label: 'Technicians', route: '/technicians', moduleId: 'technicians' },
+        { id: 'appointments', label: 'Appointments', route: '/appointments', moduleId: 'appointments' },
+        { id: 'dispatch', label: 'Dispatch Board', route: '/dispatch', moduleId: 'dispatch' },
+        { id: 'inventory', label: 'Inventory', route: '/inventory', moduleId: 'inventory' },
+        { id: 'jobs', label: 'Work Orders', route: '/jobs', permissions: ['jobs:read'], moduleId: 'work-orders' },
+        { id: 'invoices', label: 'Invoices', route: '/invoices', moduleId: 'invoices' },
+        { id: 'billing', label: 'Subscriptions', route: '/billing', moduleId: 'subscriptions' },
+        { id: 'reports', label: 'Reports', route: '/reports', moduleId: 'reports' },
+        { id: 'workflows', label: 'Workflows', route: '/workflows', moduleId: 'workflows' },
+        { id: 'webhooks', label: 'Webhooks', route: '/webhooks', moduleId: 'webhooks' },
         { id: 'users', label: 'Users', route: '/users', permissions: ['users:read'] },
         { id: 'roles', label: 'Roles', route: '/roles', permissions: ['roles:read'] },
         { id: 'permissions', label: 'Permissions', route: '/permissions', permissions: ['roles:manage'] },
         { id: 'assistant', label: 'AI Assistant', route: '/assistant', permissions: ['ai-assistant:read'] },
-        { id: 'jobs', label: 'Background Jobs', route: '/jobs', permissions: ['jobs:read'] },
-        { id: 'notifications', label: 'Notifications', route: '/notifications', permissions: ['notifications:read'] },
-        { id: 'logs', label: 'Logs', route: '/logs', permissions: ['logs:read'] },
+        { id: 'notifications', label: 'Notifications', route: '/notifications', permissions: ['notifications:read'], moduleId: 'notifications' },
+        { id: 'background-jobs', label: 'Background Jobs', route: '/background-jobs', permissions: ['jobs:read'], moduleId: 'background-jobs' },
+        { id: 'logs', label: 'Logs', route: '/logs', permissions: ['logs:read'], moduleId: 'logs' },
       ],
     },
     {
@@ -6644,8 +6666,10 @@ type NotificationDelivery = { id: string; status: string; subject?: string | nul
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return 'U';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  const first = parts[0] ?? 'U';
+  if (parts.length === 1) return first.slice(0, 2).toUpperCase();
+  const second = parts[1] ?? '';
+  return (first.charAt(0) + second.charAt(0)).toUpperCase();
 }
 
 export default function AppLayout() {
@@ -6657,8 +6681,16 @@ export default function AppLayout() {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
   const [me, setMe] = useState<MeResponse>({});
   const [deliveries, setDeliveries] = useState<NotificationDelivery[]>([]);
+  const [moduleEnabled, setModuleEnabled] = useState<Record<string, boolean>>({});
 
   const sections = useMemo(() => getPortalMenuSections(), []);
+  const visibleSections = useMemo(
+    () => sections.map((section) => ({
+      ...section,
+      children: section.children.filter((item) => !item.moduleId || moduleEnabled[item.moduleId] !== false),
+    })).filter((section) => section.children.length > 0),
+    [moduleEnabled, sections],
+  );
 
   useEffect(() => {
     installGlobalClientLogging();
@@ -6694,6 +6726,20 @@ export default function AppLayout() {
     });
     if (notifRes.ok) {
       setDeliveries((await notifRes.json()) as NotificationDelivery[]);
+    }
+
+    const moduleIds = [...new Set(sections.flatMap((section) => section.children.map((item) => item.moduleId).filter(Boolean) as string[]))];
+    if (moduleIds.length > 0) {
+      const entries = await Promise.all(moduleIds.map(async (moduleId) => {
+        const key = 'modules.' + moduleId + '.enabled';
+        const res = await fetch(API + '/v1/settings/' + encodeURIComponent(key), {
+          headers: { authorization: 'Bearer ' + token, 'x-tenant-id': tenantId },
+        });
+        if (!res.ok) return [moduleId, true] as const;
+        const data = (await res.json()) as { value?: boolean };
+        return [moduleId, data.value !== false] as const;
+      }));
+      setModuleEnabled(Object.fromEntries(entries));
     }
   }
 
@@ -6737,24 +6783,24 @@ export default function AppLayout() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--hf-surface-alt)', color: 'var(--hf-foreground)' }}>
-      <aside style={{ width: 276, background: 'var(--hf-sidebar)', borderRight: '1px solid rgba(148, 163, 184, 0.2)', display: 'flex', flexDirection: 'column', color: '#d7e1f0' }}>
-        <div style={{ minHeight: 72, display: 'flex', alignItems: 'center', padding: '0 1.25rem', borderBottom: '1px solid rgba(148, 163, 184, 0.2)' }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 40%, #0ea5e9 100%)', marginRight: 10 }} />
+      <aside style={{ width: 276, background: 'var(--hf-sidebar)', borderRight: '1px solid var(--hf-border)', display: 'flex', flexDirection: 'column', color: 'var(--hf-sidebar-text)' }}>
+        <div style={{ minHeight: 72, display: 'flex', alignItems: 'center', padding: '0 1.25rem', borderBottom: '1px solid var(--hf-border)' }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--hf-primary)', color: '#fff', fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>F</div>
           <div>
-            <p style={{ margin: 0, fontWeight: 700, color: '#eff6ff' }}>HubForge</p>
-            <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#9fb0cb', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{t('workspace.label', 'Workspace')}</p>
+            <p style={{ margin: 0, fontWeight: 700, color: 'var(--hf-foreground)' }}>HubForge Workspace</p>
+            <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: 'var(--hf-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{t('workspace.label', 'Workspace')}</p>
           </div>
         </div>
 
         <nav style={{ padding: '0.9rem 0.6rem', flex: 1, overflowY: 'auto' }}>
-          {sections.map((section) => {
+          {visibleSections.map((section) => {
             const isCollapsed = collapsed[section.id] === true;
             return (
               <div key={section.id} style={{ marginBottom: '0.95rem' }}>
                 <button
                   type="button"
                   onClick={() => toggleSection(section.id)}
-                  style={{ width: '100%', textAlign: 'left', margin: '0 0 0.45rem', padding: '0.25rem 0.45rem', fontSize: '0.68rem', color: '#8fa2c0', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
+                  style={{ width: '100%', textAlign: 'left', margin: '0 0 0.45rem', padding: '0.25rem 0.45rem', fontSize: '0.68rem', color: 'var(--hf-muted)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
                 >
                   <span>{t('nav.section.' + section.id, section.label)}</span>
                   <span>{isCollapsed ? '+' : '-'}</span>
@@ -6774,7 +6820,7 @@ export default function AppLayout() {
                       marginBottom: 4.5,
                       color: isActive ? 'var(--hf-sidebar-active-text)' : 'var(--hf-sidebar-text)',
                       background: isActive ? 'var(--hf-sidebar-active)' : 'transparent',
-                      border: isActive ? '1px solid rgba(255, 255, 255, 0.24)' : '1px solid transparent',
+                      border: isActive ? '1px solid var(--hf-border-strong)' : '1px solid transparent',
                       fontWeight: isActive ? 600 : 500,
                     })}
                   >
@@ -6786,8 +6832,8 @@ export default function AppLayout() {
           })}
         </nav>
 
-        <div style={{ padding: '1rem', borderTop: '1px solid rgba(148, 163, 184, 0.2)' }}>
-          <button onClick={logout} style={{ width: '100%', padding: '8px 10px', borderRadius: 10, background: 'rgba(15, 23, 42, 0.35)', border: '1px solid rgba(148, 163, 184, 0.24)', color: '#d6e0ee', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+        <div style={{ padding: '1rem', borderTop: '1px solid var(--hf-border)' }}>
+          <button onClick={logout} style={{ width: '100%', padding: '8px 10px', borderRadius: 10, background: 'var(--hf-surface)', border: '1px solid var(--hf-border)', color: 'var(--hf-foreground)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
             {t('menu.logout', 'Logout')}
           </button>
         </div>
@@ -6917,6 +6963,18 @@ export default function SettingsIndexPage() {
         <Link to="/jobs" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
           <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Background Jobs</p>
           <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Monitor queued work and trigger jobs directly from admin.</p>
+        </Link>
+        <Link to="/customers" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Customers</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Manage customer accounts, service history, and account relationships.</p>
+        </Link>
+        <Link to="/dispatch" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Dispatch Board</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Coordinate work orders, appointments, and field technician assignments.</p>
+        </Link>
+        <Link to="/invoices" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>Invoices</p>
+          <p style={{ margin: 0, color: 'var(--hf-muted)', fontSize: '0.85rem' }}>Review invoice lifecycle, payment status, and collection health.</p>
         </Link>
         <Link to="/assistant" style={{ textDecoration: 'none', border: '1px solid var(--hf-border)', borderRadius: 12, background: 'var(--hf-surface)', padding: '1rem' }}>
           <p style={{ fontWeight: 700, color: 'var(--hf-foreground)', margin: '0 0 0.25rem' }}>AI Assistant</p>
@@ -7273,6 +7331,33 @@ function portalDashboardRoute(): string {
         ))}
       </div>
     </div>
+  );
+}
+`;
+}
+
+function portalModuleOverviewRoute(title: string, description: string, highlights: string[]): string {
+  const cards = JSON.stringify(highlights);
+  return `const highlights = ${cards} as string[];
+
+export default function ModuleOverviewPage() {
+  return (
+    <section>
+      <div style={{ marginBottom: '1rem' }}>
+        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--hf-muted)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Operations Workspace</p>
+        <h2 style={{ fontSize: '1.85rem', fontWeight: 800, margin: '0.35rem 0 0.45rem', color: 'var(--hf-foreground)', letterSpacing: '-0.03em' }}>${title}</h2>
+        <p style={{ margin: 0, color: 'var(--hf-muted)', maxWidth: 760 }}>${description}</p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.85rem' }}>
+        {highlights.map((item) => (
+          <article key={item} style={{ border: '1px solid var(--hf-border)', borderRadius: 14, background: 'var(--hf-surface)', boxShadow: 'var(--hf-card-shadow-soft)', padding: '0.95rem 1rem' }}>
+            <p style={{ margin: 0, color: 'var(--hf-foreground)', fontWeight: 700 }}>{item}</p>
+            <p style={{ margin: '0.35rem 0 0', color: 'var(--hf-muted)', fontSize: '0.86rem' }}>Configured and ready for module-specific API wiring.</p>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 `;
@@ -8833,21 +8918,21 @@ export type ThemePreset = 'ynex-light' | 'slate' | 'forest';
 
 const PRESETS: Record<ThemePreset, Record<string, string>> = {
   'ynex-light': {
-    '--hf-primary': '#2563eb',
-    '--hf-primary-hover': '#1d4ed8',
-    '--hf-primary-soft': 'rgba(37, 99, 235, 0.12)',
-    '--hf-surface': 'rgba(255, 255, 255, 0.92)',
-    '--hf-surface-alt': '#f4f7fb',
-    '--hf-surface-muted': '#eef3f8',
-    '--hf-foreground': '#172033',
-    '--hf-muted': '#617089',
-    '--hf-border': 'rgba(148, 163, 184, 0.22)',
-    '--hf-border-strong': 'rgba(100, 116, 139, 0.32)',
-    '--hf-sidebar': 'linear-gradient(180deg, #0f172a 0%, #111c34 100%)',
-    '--hf-sidebar-text': '#afbdd4',
-    '--hf-sidebar-active': 'rgba(255, 255, 255, 0.08)',
-    '--hf-sidebar-active-text': '#f8fbff',
-    '--hf-header': 'rgba(255, 255, 255, 0.82)',
+    '--hf-primary': '#845adf',
+    '--hf-primary-hover': '#6f43cc',
+    '--hf-primary-soft': 'rgba(132, 90, 223, 0.12)',
+    '--hf-surface': '#ffffff',
+    '--hf-surface-alt': '#f0f1f7',
+    '--hf-surface-muted': '#f8f8fb',
+    '--hf-foreground': '#2a2f3e',
+    '--hf-muted': '#8c9097',
+    '--hf-border': '#e9edf4',
+    '--hf-border-strong': '#d7ddea',
+    '--hf-sidebar': '#ffffff',
+    '--hf-sidebar-text': '#536485',
+    '--hf-sidebar-active': '#f0ebfc',
+    '--hf-sidebar-active-text': '#845adf',
+    '--hf-header': '#ffffff',
     '--hf-card-shadow': '0 18px 40px rgba(15, 23, 42, 0.08)',
     '--hf-card-shadow-soft': '0 8px 24px rgba(15, 23, 42, 0.05)',
   },

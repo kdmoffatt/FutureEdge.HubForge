@@ -615,7 +615,7 @@ async function patchPortalModulesRoute(targetDir: string, slug: string, pascal: 
     existing = `const moduleCards: Array<{ id: string; name: string; route: string }> = [\n];\n\nexport default function ModulesPage() {\n  return (\n    <div>\n      <h2 style={{ fontSize: '1.5rem', fontWeight: 600, marginBottom: '1rem' }}>Modules</h2>\n      <div style={{ display: 'grid', gap: '0.75rem' }}>\n        {moduleCards.map((item) => (\n          <div key={item.id} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: '1rem' }}>\n            <p style={{ fontWeight: 600, margin: 0 }}>{item.name}</p>\n            <p style={{ color: '#6b7280', margin: '0.25rem 0 0' }}>{item.route}</p>\n          </div>\n        ))}\n      </div>\n    </div>\n  );\n}\n`;
   }
 
-  const entry = `  { id: '${slug}', name: '${title}', route: '/app/${slug}' },`;
+  const entry = `  { id: '${slug}', name: '${title}', route: '/${slug}' },`;
   if (existing.includes(entry)) {
     await writeTextFile(routePath, existing);
     return;

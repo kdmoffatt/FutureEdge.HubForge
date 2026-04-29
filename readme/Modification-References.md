@@ -9,15 +9,12 @@ Completed requested cleanup and command naming generalization:
 - Added generic root scripts:
   - `pnpm hubforge:regen`
   - `pnpm hubforge:regen:sh`
-- Kept compatibility aliases:
-  - `pnpm fieldops:regen`
-  - `pnpm fieldops:regen:sh`
 - Updated script argument style to generic long options:
   - `--target <path>`
   - `--initialize-if-missing`
   - `--force-upgrade`
   - `--skip-validation`
-  - optional `--feature-profile fieldops` (for curated FieldOps feature patching)
+  - optional `--feature-profile operations-saas` (for curated operations SaaS feature patching)
 - Updated script messaging and defaults to non-FieldOps-specific behavior.
 
 Completed UX implementation for remaining portal slices in template generation:
@@ -93,16 +90,16 @@ Validation completed for authserver command pass:
 - `pnpm --filter @hubforge/cli run cli -- --help` includes `authserver enable`
 - `pnpm --filter @hubforge/cli run cli -- authserver enable --target ./_tmp_regen_verify --force` passed
 
-## Latest update (FieldOps regeneration/upgrade script parity)
+## Latest update (project regeneration/upgrade script parity)
 
-Completed item 7 by adding a dedicated, repeatable FieldOps regeneration workflow script that upgrades existing sample workspaces and safely applies missing generated modules.
+Completed item 7 by adding a dedicated, repeatable project regeneration workflow script that upgrades existing sample workspaces and safely applies missing generated modules.
 
 - Added new scripts:
-  - `scripts/fieldops-regenerate.ps1` (PowerShell)
-  - `scripts/fieldops-regenerate.sh` (bash)
+  - `scripts/project-regenerate.ps1` (PowerShell)
+  - `scripts/project-regenerate.sh` (bash)
 - Added root package scripts for easy execution:
-  - `pnpm fieldops:regen`
-  - `pnpm fieldops:regen:sh`
+  - `pnpm hubforge:regen`
+  - `pnpm hubforge:regen:sh`
 - Script workflow includes:
   - Build CLI (`pnpm hubforge:build`)
   - Upgrade target project (`hubforge upgrade --target <path>`)
@@ -117,7 +114,7 @@ Completed item 7 by adding a dedicated, repeatable FieldOps regeneration workflo
 Validation completed for item 7 pass:
 
 - `pnpm --filter @hubforge/cli run build` passed
-- `pnpm fieldops:regen -- -TargetPath ./_tmp_regen_verify -InitializeIfMissing -SkipValidation` passed
+- `pnpm hubforge:regen -- -TargetPath ./_tmp_regen_verify -InitializeIfMissing -SkipValidation` passed
 
 ## Latest update (CLI item 6 enhancements)
 

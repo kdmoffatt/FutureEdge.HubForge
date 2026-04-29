@@ -97,7 +97,7 @@ function Invoke-Hubforge {
 }
 
 $features = @()
-if ($FeatureProfile -eq 'fieldops') {
+if ($FeatureProfile -eq 'operations-saas') {
   $features = @(
     @{ Name='marketing-site'; Type='public-page'; Marker='apps/ui/app/routes/marketing-site.tsx' },
     @{ Name='billing'; Type='billing-module'; Marker='apps/portal/app/routes/_app.billing._index.tsx' },
@@ -176,6 +176,7 @@ try {
     Invoke-Step -Label 'Install dependencies in target project' -Arguments @('--dir', $targetAbsolute, 'install')
     Invoke-Step -Label 'Run target DB migrate' -Arguments @('--dir', $targetAbsolute, 'db:migrate')
     Invoke-Step -Label 'Run target DB seed' -Arguments @('--dir', $targetAbsolute, 'db:seed')
+    Invoke-Step -Label 'Run target validation checks' -Arguments @('hubforge', 'validate', '--target', $targetAbsolute, '--skip-install')
   }
 
   Write-Host "[hubforge-regenerate] Complete. Applied=$applied Skipped=$skipped"
