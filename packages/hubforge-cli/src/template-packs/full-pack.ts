@@ -167,18 +167,19 @@ export async function scaffoldFullTemplatePack(targetDir: string, options: InitS
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'package.json'), dbPackageJson());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'tsconfig.json'), packageTsConfig());
   await writeTextFile(path.join(targetDir, 'packages', 'db', '.env'), dbEnvFile(options.dbProvider));
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'drizzle.config.ts'), drizzleConfigTs(options));
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'bootstrap-postgres.mjs'), dbBootstrapPostgresScript());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'seed-registry.mjs'), dbSeedRegistryScript());
-  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'index.ts'), dbIndexTs());
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'index.ts'), dbIndexTs(options));
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'schema.ts'), dbSchemaTs(options));
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'rbac.ts'), dbRbacTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'settings.ts'), dbSettingsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'notifications.ts'), dbNotificationsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'permissions.ts'), dbPermissionsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'billing.ts'), dbBillingTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'jobs.ts'), dbJobsTs());
   await writeTextFile(path.join(targetDir, 'packages', 'db', 'src', 'logging.ts'), dbLoggingTs());
-  await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'seed.mjs'), dbSeedScript());
-  await writeTextFile(path.join(targetDir, 'packages', 'db', 'prisma', 'schema.prisma'), prismaSchema(options));
-  await writeTextFile(path.join(targetDir, 'packages', 'db', 'migrations', '0001_init.sql'), initialMigrationSql(options));
+  await writeTextFile(path.join(targetDir, 'packages', 'db', 'scripts', 'seed.ts'), dbSeedScript(options));
 
   // Root test + CI scaffolding
   await writeTextFile(path.join(targetDir, 'playwright.config.ts'), playwrightConfigTs());
@@ -1534,7 +1535,7 @@ function apiAuthRouteTs(options: InitScaffoldOptions): string {
   const providerBlock = options.authServer
     ? `const tenantId = c.req.header('x-tenant-id');
     if (tenantId) {
-      const settings = await prisma.authServerSettings.findUnique({ where: { tenantId } });
+      const settings = await db.query.authServerSettings.findFirst({ where: eq(authServerSettings.tenantId, tenantId) });
       if (settings?.enabled) {
         return c.json({
           mode: 'external',
@@ -1562,7 +1563,8 @@ function apiAuthRouteTs(options: InitScaffoldOptions): string {
 
   return `import type { Hono } from 'hono';
 import { SignJWT, jwtVerify } from 'jose';
-import { prisma, SettingsService } from '@hubforge/db';
+import { db, SettingsService, users, memberships, tenants, authServerSettings } from '@hubforge/db';
+import { eq, and } from 'drizzle-orm';
 
 const secret = new TextEncoder().encode(
   process.env['AUTH_LOCAL_JWT_SECRET'] ?? 'hubforge-local-dev-secret',
@@ -1597,12 +1599,14 @@ async function resolveAuthenticatedContext(c: any): Promise<AuthenticatedContext
 
   try {
     const { payload } = await jwtVerify(token, secret, { issuer, audience });
-    const user = await prisma.user.findUnique({ where: { id: payload['sub'] as string } });
+    const user = await db.query.users.findFirst({ where: eq(users.id, payload['sub'] as string) });
     if (!user) return null;
-    const memberships = await prisma.membership.findMany({ where: { userId: user.id }, include: { tenant: true } });
+    const membershipRows = await db.select().from(memberships)
+      .leftJoin(tenants, eq(memberships.tenantId, tenants.id))
+      .where(eq(memberships.userId, user.id));
     return {
       user: { id: user.id, email: user.email, name: user.name },
-      memberships,
+      memberships: membershipRows.map(r => ({ ...r.memberships, tenant: r.tenants })),
     };
   } catch {
     return null;
@@ -1637,25 +1641,26 @@ export function registerAuthRoutes(app: Hono): void {
     if (typeof body.email !== 'string' || typeof body.password !== 'string') {
       return c.json({ error: 'email and password are required' }, 400);
     }
-    const existing = await prisma.user.findUnique({ where: { email: body.email } });
+    const existing = await db.query.users.findFirst({ where: eq(users.email, body.email) });
     if (existing) return c.json({ error: 'Email already registered' }, 409);
 
     const passwordHash = await hashPassword(body.password);
-    const user = await prisma.user.create({
-      data: { email: body.email, name: typeof body.name === 'string' ? body.name : null, passwordHash },
-    });
+    const [user] = await db.insert(users)
+      .values({ email: body.email, name: typeof body.name === 'string' ? body.name : null, passwordHash })
+      .returning();
 
     const slug = typeof body.tenantSlug === 'string' && body.tenantSlug
       ? body.tenantSlug
       : body.email.split('@')[0]!.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    let tenant = await prisma.tenant.findUnique({ where: { slug } });
-    if (!tenant) tenant = await prisma.tenant.create({ data: { slug, name: slug } });
+    let tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) });
+    if (!tenant) {
+      const [newTenant] = await db.insert(tenants).values({ slug, name: slug }).returning();
+      tenant = newTenant;
+    }
 
-    await prisma.membership.upsert({
-      where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
-      update: {},
-      create: { tenantId: tenant.id, userId: user.id, role: 'admin' },
-    });
+    await db.insert(memberships)
+      .values({ tenantId: tenant.id, userId: user.id, role: 'admin' })
+      .onConflictDoUpdate({ target: [memberships.tenantId, memberships.userId], set: { role: 'admin' } });
     const token = await signToken(user.id, user.email);
     return c.json({ token, user: { id: user.id, email: user.email, name: user.name }, tenantId: tenant.id }, 201);
   };
@@ -1668,11 +1673,11 @@ export function registerAuthRoutes(app: Hono): void {
     if (typeof body.email !== 'string' || typeof body.password !== 'string') {
       return c.json({ error: 'email and password are required' }, 400);
     }
-    const user = await prisma.user.findUnique({ where: { email: body.email } });
+    const user = await db.query.users.findFirst({ where: eq(users.email, body.email) });
     if (!user?.passwordHash) return c.json({ error: 'Invalid credentials' }, 401);
     const hash = await hashPassword(body.password);
     if (hash !== user.passwordHash) return c.json({ error: 'Invalid credentials' }, 401);
-    const membership = await prisma.membership.findFirst({ where: { userId: user.id } });
+    const membership = await db.query.memberships.findFirst({ where: eq(memberships.userId, user.id) });
     const token = await signToken(user.id, user.email);
     return c.json({ token, user: { id: user.id, email: user.email, name: user.name }, tenantId: membership?.tenantId ?? null });
   };
@@ -1717,7 +1722,7 @@ export function registerAuthRoutes(app: Hono): void {
     }
 
     if (typeof body['email'] === 'string' && body['email'].trim().length > 0 && body['email'] !== auth.user.email) {
-      const existing = await prisma.user.findUnique({ where: { email: body['email'] } });
+      const existing = await db.query.users.findFirst({ where: eq(users.email, body['email']) });
       if (existing && existing.id !== auth.user.id) {
         return c.json({ error: 'Email already in use' }, 409);
       }
@@ -1725,8 +1730,8 @@ export function registerAuthRoutes(app: Hono): void {
     }
 
     const updated = Object.keys(updateData).length > 0
-      ? await prisma.user.update({ where: { id: auth.user.id }, data: updateData })
-      : await prisma.user.findUnique({ where: { id: auth.user.id } });
+      ? (await db.update(users).set(updateData).where(eq(users.id, auth.user.id)).returning())[0]
+      : await db.query.users.findFirst({ where: eq(users.id, auth.user.id) });
 
     if (!updated) return c.json({ error: 'User not found' }, 404);
 
@@ -1917,13 +1922,14 @@ export function useI18n() {
 
 function apiAuthServerSettingsRouteTs(): string {
   return `import type { Hono } from 'hono';
-import { prisma } from '@hubforge/db';
+import { db, authServerSettings } from '@hubforge/db';
+import { eq } from 'drizzle-orm';
 
 export function registerAuthServerSettingsRoutes(app: Hono): void {
   app.get('/v1/settings/auth-server', async (c) => {
     const tenantId = c.req.header('x-tenant-id');
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
-    const settings = await prisma.authServerSettings.findUnique({ where: { tenantId } });
+    const settings = await db.query.authServerSettings.findFirst({ where: eq(authServerSettings.tenantId, tenantId) });
     return c.json({
       enabled: settings?.enabled ?? false,
       provider: settings?.provider ?? null,
@@ -1940,18 +1946,8 @@ export function registerAuthServerSettingsRoutes(app: Hono): void {
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
 
-    const settings = await prisma.authServerSettings.upsert({
-      where: { tenantId },
-      update: {
-        enabled: body['enabled'] === true,
-        provider: typeof body['provider'] === 'string' ? body['provider'] : null,
-        issuerUrl: typeof body['issuerUrl'] === 'string' ? body['issuerUrl'] : null,
-        jwksUrl: typeof body['jwksUrl'] === 'string' ? body['jwksUrl'] : null,
-        clientId: typeof body['clientId'] === 'string' ? body['clientId'] : null,
-        clientSecret: typeof body['clientSecret'] === 'string' ? body['clientSecret'] : null,
-        audience: typeof body['audience'] === 'string' ? body['audience'] : null,
-      },
-      create: {
+    const [settings] = await db.insert(authServerSettings)
+      .values({
         tenantId,
         enabled: body['enabled'] === true,
         provider: typeof body['provider'] === 'string' ? body['provider'] : null,
@@ -1960,8 +1956,22 @@ export function registerAuthServerSettingsRoutes(app: Hono): void {
         clientId: typeof body['clientId'] === 'string' ? body['clientId'] : null,
         clientSecret: typeof body['clientSecret'] === 'string' ? body['clientSecret'] : null,
         audience: typeof body['audience'] === 'string' ? body['audience'] : null,
-      },
-    });
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [authServerSettings.tenantId],
+        set: {
+          enabled: body['enabled'] === true,
+          provider: typeof body['provider'] === 'string' ? body['provider'] : null,
+          issuerUrl: typeof body['issuerUrl'] === 'string' ? body['issuerUrl'] : null,
+          jwksUrl: typeof body['jwksUrl'] === 'string' ? body['jwksUrl'] : null,
+          clientId: typeof body['clientId'] === 'string' ? body['clientId'] : null,
+          clientSecret: typeof body['clientSecret'] === 'string' ? body['clientSecret'] : null,
+          audience: typeof body['audience'] === 'string' ? body['audience'] : null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
 
     return c.json(settings);
   });
@@ -2431,7 +2441,7 @@ export function registerNotificationRoutes(app: Hono): void {
 
 function apiAiAssistantRouteTs(): string {
   return `import type { Hono } from 'hono';
-import { prisma } from '@hubforge/db';
+import { RbacService } from '@hubforge/db';
 import { requireAuth } from '../lib/auth.js';
 
 type AuthPayload = { sub?: unknown; email?: unknown };
@@ -2614,24 +2624,7 @@ async function generateAiJson(systemPrompt: string, userPrompt: string): Promise
 }
 
 async function hasPermission(userId: string, tenantId: string, module: string, action: string): Promise<boolean> {
-  const hit = await prisma.userRole.findFirst({
-    where: {
-      userId,
-      role: {
-        tenantId,
-        permissions: {
-          some: {
-            permission: {
-              module,
-              action,
-            },
-          },
-        },
-      },
-    },
-    select: { id: true },
-  });
-  return Boolean(hit);
+  return RbacService.hasPermission(userId, tenantId, module, action);
 }
 
 async function authorizeAiPermission(
@@ -2763,30 +2756,14 @@ export function registerAiAssistantRoutes(app: Hono): void {
 
 function apiRbacRouteTs(): string {
   return `import type { Hono } from 'hono';
-import { prisma } from '@hubforge/db';
+import { RbacService } from '@hubforge/db';
 import { requireAuth } from '../lib/auth.js';
 
 export function registerUsersRoutes(app: Hono): void {
   app.get('/v1/users', requireAuth, async (c) => {
     const tenantId = c.req.header('x-tenant-id');
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
-
-    const users = await prisma.user.findMany({
-      where: {
-        memberships: {
-          some: { tenantId },
-        },
-      },
-      include: {
-        memberships: { where: { tenantId } },
-        userRoles: {
-          where: { role: { tenantId } },
-          include: { role: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
+    const users = await RbacService.listUsers(tenantId);
     return c.json(users);
   });
 
@@ -2795,38 +2772,10 @@ export function registerUsersRoutes(app: Hono): void {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const email = body['email'];
     const name = body['name'];
-
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
     if (typeof email !== 'string') return c.json({ error: 'email is required' }, 400);
-
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) return c.json({ error: 'User already exists' }, 409);
-
-    const user = await prisma.user.create({
-      data: {
-        email,
-        name: typeof name === 'string' ? name : null,
-      },
-    });
-
-    await prisma.membership.upsert({
-      where: { tenantId_userId: { tenantId, userId: user.id } },
-      update: {},
-      create: { tenantId, userId: user.id, role: 'member' },
-    });
-
-    const hydrated = await prisma.user.findUnique({
-      where: { id: user.id },
-      include: {
-        memberships: { where: { tenantId } },
-        userRoles: {
-          where: { role: { tenantId } },
-          include: { role: true },
-        },
-      },
-    });
-
-    return c.json(hydrated, 201);
+    const user = await RbacService.createUser(tenantId, email, typeof name === 'string' ? name : null);
+    return c.json(user, 201);
   });
 
   app.put('/v1/users/:userId', requireAuth, async (c) => {
@@ -2834,27 +2783,12 @@ export function registerUsersRoutes(app: Hono): void {
     const userId = c.req.param('userId');
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
     if (!userId) return c.json({ error: 'userId is required' }, 400);
-
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const update: Record<string, unknown> = {};
+    const update: { name?: string; email?: string } = {};
     if (typeof body['name'] === 'string') update.name = body['name'];
     if (typeof body['email'] === 'string') update.email = body['email'];
-
-    const membership = await prisma.membership.findFirst({ where: { tenantId, userId } });
-    if (!membership) return c.json({ error: 'User not found in tenant' }, 404);
-
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: update,
-      include: {
-        memberships: { where: { tenantId } },
-        userRoles: {
-          where: { role: { tenantId } },
-          include: { role: true },
-        },
-      },
-    });
-
+    const user = await RbacService.updateUser(userId, tenantId, update);
+    if (!user) return c.json({ error: 'User not found in tenant' }, 404);
     return c.json(user);
   });
 
@@ -2863,24 +2797,8 @@ export function registerUsersRoutes(app: Hono): void {
     const userId = c.req.param('userId');
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
     if (!userId) return c.json({ error: 'userId is required' }, 400);
-
-    const membership = await prisma.membership.findFirst({ where: { tenantId, userId } });
-    if (!membership) return c.json({ error: 'User not found in tenant' }, 404);
-
-    const tenantRoleIds = await prisma.role.findMany({ where: { tenantId }, select: { id: true } });
-    await prisma.userRole.deleteMany({
-      where: {
-        userId,
-        roleId: { in: tenantRoleIds.map((r) => r.id) },
-      },
-    });
-
-    await prisma.membership.deleteMany({ where: { tenantId, userId } });
-    const remainingMemberships = await prisma.membership.count({ where: { userId } });
-    if (remainingMemberships === 0) {
-      await prisma.user.delete({ where: { id: userId } });
-    }
-
+    const deleted = await RbacService.deleteUser(userId, tenantId);
+    if (!deleted) return c.json({ error: 'User not found in tenant' }, 404);
     return c.json({ success: true });
   });
 
@@ -2893,17 +2811,8 @@ export function registerUsersRoutes(app: Hono): void {
     if (typeof userId !== 'string' || typeof roleId !== 'string') {
       return c.json({ error: 'userId and roleId are required' }, 400);
     }
-
-    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId } });
-    if (!role) return c.json({ error: 'Role not found in tenant' }, 404);
-
-    const membership = await prisma.membership.findFirst({ where: { tenantId, userId } });
-    if (!membership) return c.json({ error: 'User must belong to tenant before assignment' }, 400);
-
-    const assignment = await prisma.userRole.create({
-      data: { userId, roleId },
-      include: { role: true },
-    });
+    const assignment = await RbacService.assignRole(userId, roleId, tenantId);
+    if (!assignment) return c.json({ error: 'Role not found in tenant' }, 404);
     return c.json(assignment, 201);
   });
 
@@ -2912,16 +2821,8 @@ export function registerUsersRoutes(app: Hono): void {
     const id = c.req.param('id');
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
     if (!id) return c.json({ error: 'id is required' }, 400);
-
-    const assignment = await prisma.userRole.findUnique({
-      where: { id },
-      include: { role: true },
-    });
-    if (!assignment || assignment.role.tenantId !== tenantId) {
-      return c.json({ error: 'Assignment not found' }, 404);
-    }
-
-    const removed = await prisma.userRole.delete({ where: { id } });
+    const removed = await RbacService.removeRoleAssignment(id, tenantId);
+    if (!removed) return c.json({ error: 'Assignment not found' }, 404);
     return c.json(removed);
   });
 }
@@ -2930,13 +2831,7 @@ export function registerRolesRoutes(app: Hono): void {
   app.get('/v1/roles', requireAuth, async (c) => {
     const tenantId = c.req.header('x-tenant-id');
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
-
-    const roles = await prisma.role.findMany({
-      where: { tenantId },
-      include: { permissions: { include: { permission: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
-
+    const roles = await RbacService.listRoles(tenantId);
     return c.json(roles);
   });
 
@@ -2946,32 +2841,19 @@ export function registerRolesRoutes(app: Hono): void {
     const name = body['name'];
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
     if (typeof name !== 'string') return c.json({ error: 'name is required' }, 400);
-
-    const role = await prisma.role.create({
-      data: {
-        tenantId,
-        name,
-        description: typeof body['description'] === 'string' ? body['description'] : null,
-      },
-      include: { permissions: { include: { permission: true } } },
-    });
+    const role = await RbacService.createRole(tenantId, name, typeof body['description'] === 'string' ? body['description'] : null);
     return c.json(role, 201);
   });
 
   app.put('/v1/roles/:roleId', requireAuth, async (c) => {
     const roleId = c.req.param('roleId');
     if (!roleId) return c.json({ error: 'roleId is required' }, 400);
-
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const update: Record<string, unknown> = {};
+    const update: { name?: string; description?: string } = {};
     if (typeof body['name'] === 'string') update.name = body['name'];
     if (typeof body['description'] === 'string') update.description = body['description'];
-
-    const role = await prisma.role.update({
-      where: { id: roleId },
-      data: update,
-      include: { permissions: { include: { permission: true } } },
-    });
+    const role = await RbacService.updateRole(roleId, update);
+    if (!role) return c.json({ error: 'Role not found' }, 404);
     return c.json(role);
   });
 
@@ -2980,11 +2862,8 @@ export function registerRolesRoutes(app: Hono): void {
     const roleId = c.req.param('roleId');
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
     if (!roleId) return c.json({ error: 'roleId is required' }, 400);
-
-    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId } });
-    if (!role) return c.json({ error: 'Role not found' }, 404);
-
-    await prisma.role.delete({ where: { id: roleId } });
+    const deleted = await RbacService.deleteRole(roleId, tenantId);
+    if (!deleted) return c.json({ error: 'Role not found' }, 404);
     return c.json({ success: true });
   });
 
@@ -2993,50 +2872,30 @@ export function registerRolesRoutes(app: Hono): void {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const roleId = body['roleId'];
     const permissionId = body['permissionId'];
-
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
     if (typeof roleId !== 'string' || typeof permissionId !== 'string') {
       return c.json({ error: 'roleId and permissionId are required' }, 400);
     }
-
-    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId } });
-    if (!role) return c.json({ error: 'Role not found in tenant' }, 404);
-
-    const assignment = await prisma.rolePermission.create({
-      data: { roleId, permissionId },
-      include: { permission: true },
-    });
-
+    const assignment = await RbacService.assignPermission(roleId, permissionId, tenantId);
+    if (!assignment) return c.json({ error: 'Role not found in tenant' }, 404);
     return c.json(assignment, 201);
   });
 
   app.delete('/v1/role-permissions/:id', requireAuth, async (c) => {
     const tenantId = c.req.header('x-tenant-id');
     const id = c.req.param('id');
-
     if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
     if (!id) return c.json({ error: 'id is required' }, 400);
-
-    const assignment = await prisma.rolePermission.findUnique({
-      where: { id },
-      include: { role: true },
-    });
-    if (!assignment || assignment.role.tenantId !== tenantId) {
-      return c.json({ error: 'Assignment not found' }, 404);
-    }
-
-    const removed = await prisma.rolePermission.delete({ where: { id } });
+    const removed = await RbacService.removePermissionAssignment(id, tenantId);
+    if (!removed) return c.json({ error: 'Assignment not found' }, 404);
     return c.json(removed);
   });
 }
 
 export function registerPermissionsRoutes(app: Hono): void {
   app.get('/v1/permissions', requireAuth, async (c) => {
-    const permissions = await prisma.permission.findMany({
-      orderBy: [{ module: 'asc' }, { action: 'asc' }],
-    });
-
-    return c.json(permissions);
+    const perms = await RbacService.listPermissions();
+    return c.json(perms);
   });
 
   app.post('/v1/permissions', requireAuth, async (c) => {
@@ -3044,45 +2903,30 @@ export function registerPermissionsRoutes(app: Hono): void {
     const module = body['module'];
     const action = body['action'];
     const description = body['description'];
-
     if (typeof module !== 'string' || typeof action !== 'string') {
       return c.json({ error: 'module and action are required' }, 400);
     }
-
-    const permission = await prisma.permission.create({
-      data: {
-        module,
-        action,
-        description: typeof description === 'string' ? description : null,
-      },
-    });
-
-    return c.json(permission, 201);
+    const perm = await RbacService.createPermission(module, action, typeof description === 'string' ? description : null);
+    return c.json(perm, 201);
   });
 
   app.put('/v1/permissions/:permissionId', requireAuth, async (c) => {
     const permissionId = c.req.param('permissionId');
     if (!permissionId) return c.json({ error: 'permissionId is required' }, 400);
-
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const update: Record<string, unknown> = {};
+    const update: { module?: string; action?: string; description?: string } = {};
     if (typeof body['module'] === 'string') update.module = body['module'];
     if (typeof body['action'] === 'string') update.action = body['action'];
     if (typeof body['description'] === 'string') update.description = body['description'];
-
-    const permission = await prisma.permission.update({
-      where: { id: permissionId },
-      data: update,
-    });
-
-    return c.json(permission);
+    const perm = await RbacService.updatePermission(permissionId, update);
+    if (!perm) return c.json({ error: 'Permission not found' }, 404);
+    return c.json(perm);
   });
 
   app.delete('/v1/permissions/:permissionId', requireAuth, async (c) => {
     const permissionId = c.req.param('permissionId');
     if (!permissionId) return c.json({ error: 'permissionId is required' }, 400);
-
-    await prisma.permission.delete({ where: { id: permissionId } });
+    await RbacService.deletePermission(permissionId);
     return c.json({ success: true });
   });
 }
@@ -3444,7 +3288,8 @@ export function registerJobRoutes(app: Hono): void {
 
 function apiAuditLogRouteTs(): string {
   return `import type { Hono } from 'hono';
-import { prisma } from '@hubforge/db';
+import { db, auditLogs } from '@hubforge/db';
+import { eq, desc, count } from 'drizzle-orm';
 
 export function registerAuditLogRoutes(app: Hono): void {
   app.get('/v1/audit-log', async (c) => {
@@ -3454,15 +3299,14 @@ export function registerAuditLogRoutes(app: Hono): void {
     const limit = Math.min(100, Number(c.req.query('limit') ?? '30'));
     const start = (page - 1) * limit;
     const [items, total] = await Promise.all([
-      prisma.auditLog.findMany({
-        where: { tenantId },
-        orderBy: { createdAt: 'desc' },
-        skip: start,
-        take: limit,
-      }),
-      prisma.auditLog.count({ where: { tenantId } }),
+      db.select().from(auditLogs)
+        .where(eq(auditLogs.tenantId, tenantId))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit)
+        .offset(start),
+      db.select({ value: count() }).from(auditLogs).where(eq(auditLogs.tenantId, tenantId)),
     ]);
-    return c.json({ items, total, page, limit });
+    return c.json({ items, total: total[0]?.value ?? 0, page, limit });
   });
 }
 `;
@@ -4040,20 +3884,23 @@ function dbPackageJson(): string {
     type: 'module',
     scripts: {
       'db:bootstrap': 'node ./scripts/bootstrap-postgres.mjs',
-      'db:migrate': 'prisma migrate deploy --schema prisma/schema.prisma',
-      'db:migrate:dev': 'prisma migrate dev --name init --schema prisma/schema.prisma',
-      'db:generate': 'prisma generate --schema prisma/schema.prisma',
-      'db:seed': 'node ./scripts/seed.mjs',
+      'db:generate': 'drizzle-kit generate',
+      'db:migrate': 'drizzle-kit migrate',
+      'db:seed': 'tsx ./scripts/seed.ts',
       build: 'tsc -p tsconfig.json --pretty false --noEmit',
       typecheck: 'tsc -p tsconfig.json --pretty false --noEmit',
     },
     dependencies: {
-      '@prisma/client': '^5.16.0',
+      'drizzle-orm': '^0.41.0',
+      'better-sqlite3': '^11.0.0',
+      postgres: '^3.4.5',
       pg: '^8.13.1',
     },
     devDependencies: {
+      '@types/better-sqlite3': '^7.6.13',
       '@types/node': '^20.0.0',
-      prisma: '^5.16.0',
+      'drizzle-kit': '^0.30.0',
+      tsx: '^4.9.0',
       typescript: '^5.4.0',
     },
   };
@@ -4523,33 +4370,49 @@ bootstrapPostgres().catch((error) => {
 `;
 }
 
-function dbIndexTs(): string {
-  return `import { PrismaClient } from '@prisma/client';
+function dbIndexTs(options: InitScaffoldOptions): string {
+  if (options.dbProvider === 'sqlite') {
+    return `import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import * as schema from './schema.js';
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const _dbUrl = process.env['DATABASE_URL'] ?? './dev.db';
+const _dbPath = _dbUrl.startsWith('file:') ? _dbUrl.slice(5) : _dbUrl;
+const sqlite = new Database(_dbPath);
+export const db = drizzle(sqlite, { schema });
 
-export const prisma: PrismaClient =
-  globalForPrisma.prisma
-  ?? new PrismaClient({
-    log: process.env['NODE_ENV'] === 'development' ? ['error', 'warn'] : ['error'],
-  });
-
-if (process.env['NODE_ENV'] !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
-
-export { PrismaClient };
+export * from './schema.js';
 export { SettingsService, type SettingValue } from './settings.js';
 export { NotificationService } from './notifications.js';
 export { PermissionRegistry } from './permissions.js';
 export { BillingService, type BillingSubscriptionStatus } from './billing.js';
 export { JobService } from './jobs.js';
 export { LogService, type LogLevel, type LoggingSettings } from './logging.js';
+export { RbacService } from './rbac.js';
+`;
+  }
+  return `import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import * as schema from './schema.js';
+
+const client = postgres(process.env['DATABASE_URL']!);
+export const db = drizzle(client, { schema });
+
+export * from './schema.js';
+export { SettingsService, type SettingValue } from './settings.js';
+export { NotificationService } from './notifications.js';
+export { PermissionRegistry } from './permissions.js';
+export { BillingService, type BillingSubscriptionStatus } from './billing.js';
+export { JobService } from './jobs.js';
+export { LogService, type LogLevel, type LoggingSettings } from './logging.js';
+export { RbacService } from './rbac.js';
 `;
 }
 
 function dbSettingsTs(): string {
-  return `import { prisma } from './index.js';
+  return `import { db } from './index.js';
+import { settings } from './schema.js';
+import { eq, and, desc, asc, isNull } from 'drizzle-orm';
 
 export type SettingValue = string | number | boolean | object | null;
 export type SettingScope = 'tenant' | 'environment' | 'system';
@@ -4586,19 +4449,24 @@ export class SettingsService {
   ): Promise<SettingValue> {
     const scope = resolveScope(tenantId, options?.scope);
     const environmentId = options?.environmentId ?? null;
-    const setting = await (prisma.setting.findFirst as any)({
-      where: {
-        tenantId: tenantId ?? null,
-        environmentId,
-        scope,
-        module,
-        key,
-      },
-      orderBy: { createdAt: 'desc' },
+
+    function buildSettingWhere(tId: string | undefined | null, envId: string | null, sc: SettingScope, mod?: string, k?: string) {
+      return and(
+        tId != null ? eq(settings.tenantId, tId) : isNull(settings.tenantId),
+        envId != null ? eq(settings.environmentId, envId) : isNull(settings.environmentId),
+        eq(settings.scope, sc),
+        mod != null ? eq(settings.module, mod) : undefined,
+        k != null ? eq(settings.key, k) : undefined,
+      );
+    }
+
+    const row = await db.query.settings.findFirst({
+      where: buildSettingWhere(tenantId, environmentId, scope, module, key),
+      orderBy: [desc(settings.createdAt)],
     });
 
-    if (!setting) return defaultValue;
-    return parseSettingValue(setting, defaultValue);
+    if (!row) return defaultValue;
+    return parseSettingValue(row, defaultValue);
   }
 
   static async set(
@@ -4613,37 +4481,38 @@ export class SettingsService {
     const dataType =
       typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : typeof value === 'object' ? 'json' : 'string';
     const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+    const now = new Date();
 
-    const existing = await (prisma.setting.findFirst as any)({
-      where: {
-        tenantId: tenantId ?? null,
-        environmentId,
-        scope,
-        module,
-        key,
-      },
-      select: { id: true },
-      orderBy: { createdAt: 'desc' },
+    function buildSettingWhere(tId: string | undefined | null, envId: string | null, sc: SettingScope, mod?: string, k?: string) {
+      return and(
+        tId != null ? eq(settings.tenantId, tId) : isNull(settings.tenantId),
+        envId != null ? eq(settings.environmentId, envId) : isNull(settings.environmentId),
+        eq(settings.scope, sc),
+        mod != null ? eq(settings.module, mod) : undefined,
+        k != null ? eq(settings.key, k) : undefined,
+      );
+    }
+
+    const existing = await db.query.settings.findFirst({
+      where: buildSettingWhere(tenantId, environmentId, scope, module, key),
+      columns: { id: true },
+      orderBy: [desc(settings.createdAt)],
     });
 
     if (existing) {
-      await (prisma.setting.update as any)({
-        where: { id: existing.id },
-        data: { value: stringValue, dataType, updatedAt: new Date() },
-      });
+      await db.update(settings).set({ value: stringValue, dataType, updatedAt: now }).where(eq(settings.id, existing.id));
       return;
     }
 
-    await (prisma.setting.create as any)({
-      data: {
-        tenantId: tenantId ?? null,
-        environmentId,
-        scope,
-        module,
-        key,
-        value: stringValue,
-        dataType,
-      },
+    await db.insert(settings).values({
+      tenantId: tenantId ?? null,
+      environmentId,
+      scope,
+      module,
+      key,
+      value: stringValue,
+      dataType,
+      updatedAt: now,
     });
   }
 
@@ -4655,15 +4524,13 @@ export class SettingsService {
   ): Promise<void> {
     const scope = resolveScope(tenantId, options?.scope);
     const environmentId = options?.environmentId ?? null;
-    await (prisma.setting.deleteMany as any)({
-      where: {
-        tenantId: tenantId ?? null,
-        environmentId,
-        scope,
-        module,
-        key,
-      },
-    });
+    await db.delete(settings).where(and(
+      tenantId != null ? eq(settings.tenantId, tenantId) : isNull(settings.tenantId),
+      environmentId != null ? eq(settings.environmentId, environmentId) : isNull(settings.environmentId),
+      eq(settings.scope, scope),
+      eq(settings.module, module),
+      eq(settings.key, key),
+    ));
   }
 
   static async list(
@@ -4673,15 +4540,14 @@ export class SettingsService {
   ) {
     const scope = resolveScope(tenantId, options?.scope);
     const environmentId = options?.environmentId ?? null;
-    return (prisma.setting.findMany as any)({
-      where: {
-        tenantId: tenantId ?? null,
-        environmentId,
-        scope,
-        module,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    return db.select().from(settings)
+      .where(and(
+        tenantId != null ? eq(settings.tenantId, tenantId) : isNull(settings.tenantId),
+        environmentId != null ? eq(settings.environmentId, environmentId) : isNull(settings.environmentId),
+        eq(settings.scope, scope),
+        eq(settings.module, module),
+      ))
+      .orderBy(desc(settings.createdAt));
   }
 
   static async getAll(
@@ -4689,9 +4555,9 @@ export class SettingsService {
     module: string,
     options?: { environmentId?: string | null; scope?: SettingScope },
   ): Promise<Record<string, SettingValue>> {
-    const settings = await this.list(tenantId, module, options);
+    const rows = await this.list(tenantId, module, options);
     const result: Record<string, SettingValue> = {};
-    for (const item of settings) {
+    for (const item of rows) {
       result[item.key] = parseSettingValue(item, null);
     }
     return result;
@@ -4703,25 +4569,25 @@ export class SettingsService {
   ): Promise<string[]> {
     const scope = resolveScope(tenantId, options?.scope);
     const environmentId = options?.environmentId ?? null;
-    const rows = await (prisma.setting.findMany as any)({
-      where: {
-        tenantId: tenantId ?? null,
-        environmentId,
-        scope,
-      },
-      select: { module: true },
-      distinct: ['module'],
-      orderBy: { module: 'asc' },
-    });
+    const rows = await db.selectDistinct({ module: settings.module })
+      .from(settings)
+      .where(and(
+        tenantId != null ? eq(settings.tenantId, tenantId) : isNull(settings.tenantId),
+        environmentId != null ? eq(settings.environmentId, environmentId) : isNull(settings.environmentId),
+        eq(settings.scope, scope),
+      ))
+      .orderBy(asc(settings.module));
 
-    return rows.map((row: { module: string }) => row.module);
+    return rows.map(row => row.module);
   }
 }
 `;
 }
 
 function dbPermissionsTs(): string {
-  return `import { prisma } from './index.js';
+  return `import { db } from './index.js';
+import { permissions } from './schema.js';
+import { eq, and } from 'drizzle-orm';
 
 type Definition = { module: string; action: string; description?: string };
 
@@ -4744,12 +4610,14 @@ const defaults: Definition[] = [
 
 export class PermissionRegistry {
   static async syncToDatabase(): Promise<void> {
+    const now = new Date();
     for (const perm of defaults) {
-      await (prisma.permission.upsert as any)({
-        where: { module_action: { module: perm.module, action: perm.action } },
-        update: perm.description ? { description: perm.description } : {},
-        create: perm,
-      });
+      await db.insert(permissions)
+        .values({ module: perm.module, action: perm.action, description: perm.description ?? null, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [permissions.module, permissions.action],
+          set: { description: perm.description ?? null, updatedAt: now },
+        });
     }
   }
 }
@@ -4757,7 +4625,9 @@ export class PermissionRegistry {
 }
 
 function dbNotificationsTs(): string {
-  return `import { prisma } from './index.js';
+  return `import { db } from './index.js';
+import { notificationTemplates, notificationDeliveries } from './schema.js';
+import { eq, desc } from 'drizzle-orm';
 
 export type NotificationTemplateInput = {
   tenantId: string;
@@ -4783,30 +4653,21 @@ export type NotificationDeliveryInput = {
 
 export class NotificationService {
   static async listTemplates(tenantId: string) {
-    return prisma.notificationTemplate.findMany({
-      where: { tenantId },
-      orderBy: [{ updatedAt: 'desc' }],
-    });
+    return db.select().from(notificationTemplates)
+      .where(eq(notificationTemplates.tenantId, tenantId))
+      .orderBy(desc(notificationTemplates.updatedAt));
   }
 
   static async getTemplateByKey(key: string, tenantId: string) {
-    return prisma.notificationTemplate.findFirst({
-      where: { tenantId, key },
+    return db.query.notificationTemplates.findFirst({
+      where: (t, { and: _and, eq: _eq }) => _and(_eq(t.tenantId, tenantId), _eq(t.key, key)),
     });
   }
 
   static async upsertTemplate(input: NotificationTemplateInput) {
-    return prisma.notificationTemplate.upsert({
-      where: { tenantId_key: { tenantId: input.tenantId, key: input.key } },
-      update: {
-        channel: input.channel,
-        provider: input.provider ?? null,
-        subject: input.subject ?? null,
-        body: input.body,
-        isActive: input.isActive ?? true,
-        variablesSchema: input.variablesSchema == null ? null : JSON.stringify(input.variablesSchema),
-      },
-      create: {
+    const now = new Date();
+    const [row] = await db.insert(notificationTemplates)
+      .values({
         tenantId: input.tenantId,
         key: input.key,
         channel: input.channel,
@@ -4815,71 +4676,89 @@ export class NotificationService {
         body: input.body,
         isActive: input.isActive ?? true,
         variablesSchema: input.variablesSchema == null ? null : JSON.stringify(input.variablesSchema),
-      },
-    });
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [notificationTemplates.tenantId, notificationTemplates.key],
+        set: {
+          channel: input.channel,
+          provider: input.provider ?? null,
+          subject: input.subject ?? null,
+          body: input.body,
+          isActive: input.isActive ?? true,
+          variablesSchema: input.variablesSchema == null ? null : JSON.stringify(input.variablesSchema),
+          updatedAt: now,
+        },
+      })
+      .returning();
+    return row;
   }
 
   static async deleteTemplate(id: string, tenantId: string) {
-    return prisma.notificationTemplate.deleteMany({
-      where: { id, tenantId },
-    });
+    return db.delete(notificationTemplates)
+      .where(eq(notificationTemplates.id, id))
+      .returning();
   }
 
   static async listDeliveries(tenantId: string, limit = 50) {
-    return prisma.notificationDelivery.findMany({
-      where: { tenantId },
-      orderBy: [{ createdAt: 'desc' }],
-      take: limit,
-      include: { template: true },
-    });
+    const rows = await db.select().from(notificationDeliveries)
+      .leftJoin(notificationTemplates, eq(notificationDeliveries.templateId, notificationTemplates.id))
+      .where(eq(notificationDeliveries.tenantId, tenantId))
+      .orderBy(desc(notificationDeliveries.createdAt))
+      .limit(limit);
+    return rows.map(r => ({ ...r.notificationDeliveries, template: r.notificationTemplates }));
   }
 
   static async createDelivery(input: NotificationDeliveryInput) {
-    return prisma.notificationDelivery.create({
-      data: {
-        tenantId: input.tenantId,
-        templateId: input.templateId ?? null,
-        channel: input.channel,
-        provider: input.provider ?? null,
-        recipient: input.recipient,
-        subject: input.subject ?? null,
-        body: input.body,
-        payload: input.payload == null ? null : JSON.stringify(input.payload),
-        status: 'queued',
-      },
-    });
+    const [row] = await db.insert(notificationDeliveries).values({
+      tenantId: input.tenantId,
+      templateId: input.templateId ?? null,
+      channel: input.channel,
+      provider: input.provider ?? null,
+      recipient: input.recipient,
+      subject: input.subject ?? null,
+      body: input.body,
+      payload: input.payload == null ? null : JSON.stringify(input.payload),
+      status: 'queued',
+      updatedAt: new Date(),
+    }).returning();
+    return row;
   }
 
   static async markDeliverySent(id: string, result: { provider: string; externalMessageId: string }) {
-    return prisma.notificationDelivery.update({
-      where: { id },
-      data: {
-        provider: result.provider,
-        externalMessageId: result.externalMessageId,
-        status: 'sent',
-        error: null,
-        sentAt: new Date(),
-      },
-      include: { template: true },
-    });
+    const now = new Date();
+    await db.update(notificationDeliveries).set({
+      provider: result.provider,
+      externalMessageId: result.externalMessageId,
+      status: 'sent',
+      error: null,
+      sentAt: now,
+      updatedAt: now,
+    }).where(eq(notificationDeliveries.id, id));
+    const rows = await db.select().from(notificationDeliveries)
+      .leftJoin(notificationTemplates, eq(notificationDeliveries.templateId, notificationTemplates.id))
+      .where(eq(notificationDeliveries.id, id))
+      .limit(1);
+    return rows[0] ? { ...rows[0].notificationDeliveries, template: rows[0].notificationTemplates } : null;
   }
 
   static async markDeliveryFailed(id: string, errorMessage: string) {
-    return prisma.notificationDelivery.update({
-      where: { id },
-      data: {
-        status: 'failed',
-        error: errorMessage,
-      },
-      include: { template: true },
-    });
+    const now = new Date();
+    await db.update(notificationDeliveries).set({ status: 'failed', error: errorMessage, updatedAt: now }).where(eq(notificationDeliveries.id, id));
+    const rows = await db.select().from(notificationDeliveries)
+      .leftJoin(notificationTemplates, eq(notificationDeliveries.templateId, notificationTemplates.id))
+      .where(eq(notificationDeliveries.id, id))
+      .limit(1);
+    return rows[0] ? { ...rows[0].notificationDeliveries, template: rows[0].notificationTemplates } : null;
   }
 }
 `;
 }
 
 function dbBillingTs(): string {
-  return `import { prisma } from './index.js';
+  return `import { db } from './index.js';
+import { billingCustomers, billingSubscriptions, billingEvents } from './schema.js';
+import { eq, desc, and } from 'drizzle-orm';
 
 export type BillingSubscriptionStatus =
   | 'trialing'
@@ -4919,58 +4798,35 @@ export type BillingEventInput = {
 
 export class BillingService {
   static async listSubscriptions(tenantId: string) {
-    return prisma.billingSubscription.findMany({
-      where: { tenantId },
-      include: { customer: true },
-      orderBy: [{ updatedAt: 'desc' }],
-    });
+    const rows = await db.select().from(billingSubscriptions)
+      .leftJoin(billingCustomers, eq(billingSubscriptions.customerId, billingCustomers.id))
+      .where(eq(billingSubscriptions.tenantId, tenantId))
+      .orderBy(desc(billingSubscriptions.updatedAt));
+    return rows.map(r => ({ ...r.billingSubscriptions, customer: r.billingCustomers }));
   }
 
   static async upsertSubscriptionLifecycle(input: BillingLifecycleInput) {
-    const customer = await prisma.billingCustomer.upsert({
-      where: {
-        tenantId_provider_externalCustomerId: {
-          tenantId: input.tenantId,
-          provider: input.provider,
-          externalCustomerId: input.externalCustomerId,
-        },
-      },
-      update: {
-        email: input.customerEmail ?? null,
-        name: input.customerName ?? null,
-      },
-      create: {
+    const now = new Date();
+    const [customer] = await db.insert(billingCustomers)
+      .values({
         tenantId: input.tenantId,
         provider: input.provider,
         externalCustomerId: input.externalCustomerId,
         email: input.customerEmail ?? null,
         name: input.customerName ?? null,
-      },
-    });
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [billingCustomers.tenantId, billingCustomers.provider, billingCustomers.externalCustomerId],
+        set: { email: input.customerEmail ?? null, name: input.customerName ?? null, updatedAt: now },
+      })
+      .returning();
 
-    const cancelledAt = input.status === 'canceled' ? new Date() : null;
+    const cancelledAt = input.status === 'canceled' ? now : null;
     const metadata = input.metadata == null ? null : JSON.stringify(input.metadata);
 
-    return prisma.billingSubscription.upsert({
-      where: {
-        tenantId_provider_externalSubscriptionId: {
-          tenantId: input.tenantId,
-          provider: input.provider,
-          externalSubscriptionId: input.externalSubscriptionId,
-        },
-      },
-      update: {
-        customerId: customer.id,
-        planCode: input.planCode,
-        status: input.status,
-        currency: input.currency,
-        cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
-        currentPeriodStart: input.currentPeriodStart ?? null,
-        currentPeriodEnd: input.currentPeriodEnd ?? null,
-        metadata,
-        cancelledAt,
-      },
-      create: {
+    const [sub] = await db.insert(billingSubscriptions)
+      .values({
         tenantId: input.tenantId,
         customerId: customer.id,
         provider: input.provider,
@@ -4983,32 +4839,47 @@ export class BillingService {
         currentPeriodEnd: input.currentPeriodEnd ?? null,
         metadata,
         cancelledAt,
-      },
-      include: {
-        customer: true,
-      },
-    });
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [billingSubscriptions.tenantId, billingSubscriptions.provider, billingSubscriptions.externalSubscriptionId],
+        set: {
+          customerId: customer.id,
+          planCode: input.planCode,
+          status: input.status,
+          currency: input.currency,
+          cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+          currentPeriodStart: input.currentPeriodStart ?? null,
+          currentPeriodEnd: input.currentPeriodEnd ?? null,
+          metadata,
+          cancelledAt,
+          updatedAt: now,
+        },
+      })
+      .returning();
+    return { ...sub, customer };
   }
 
   static async recordEvent(input: BillingEventInput) {
-    return prisma.billingEvent.create({
-      data: {
-        tenantId: input.tenantId,
-        provider: input.provider,
-        eventType: input.eventType,
-        externalEventId: input.externalEventId ?? null,
-        payload: JSON.stringify(input.payload),
-        status: input.status,
-        error: input.error ?? null,
-      },
-    });
+    const [row] = await db.insert(billingEvents).values({
+      tenantId: input.tenantId,
+      provider: input.provider,
+      eventType: input.eventType,
+      externalEventId: input.externalEventId ?? null,
+      payload: JSON.stringify(input.payload),
+      status: input.status,
+      error: input.error ?? null,
+    }).returning();
+    return row;
   }
 }
 `;
 }
 
 function dbJobsTs(): string {
-  return `import { prisma } from './index.js';
+  return `import { db } from './index.js';
+import { backgroundJobs, jobSchedules } from './schema.js';
+import { eq, desc, asc, and, or, lte, isNull } from 'drizzle-orm';
 
 export type JobInput = {
   tenantId: string | null;
@@ -5034,149 +4905,128 @@ export type JobScheduleInput = {
 
 export class JobService {
   static async enqueue(input: JobInput) {
-    return prisma.backgroundJob.create({
-      data: {
-        tenantId: input.tenantId,
-        scheduleId: input.scheduleId ?? null,
-        jobType: input.jobType,
-        status: 'queued',
-        priority: input.priority ?? 0,
-        maxAttempts: input.maxAttempts ?? 3,
-        scheduledFor: input.scheduledFor ?? null,
-        payload: input.payload == null ? null : JSON.stringify(input.payload),
-        createdBy: input.createdBy ?? null,
-      },
-    });
+    const [job] = await db.insert(backgroundJobs).values({
+      tenantId: input.tenantId,
+      scheduleId: input.scheduleId ?? null,
+      jobType: input.jobType,
+      status: 'queued',
+      priority: input.priority ?? 0,
+      maxAttempts: input.maxAttempts ?? 3,
+      scheduledFor: input.scheduledFor ?? null,
+      payload: input.payload == null ? null : JSON.stringify(input.payload),
+      createdBy: input.createdBy ?? null,
+      updatedAt: new Date(),
+    }).returning();
+    return job;
   }
 
   static async list(tenantId: string | null) {
-    return prisma.backgroundJob.findMany({
-      where: tenantId ? { tenantId } : {},
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: {
-        schedule: true,
-      },
-    });
+    const rows = await db.select().from(backgroundJobs)
+      .leftJoin(jobSchedules, eq(backgroundJobs.scheduleId, jobSchedules.id))
+      .where(tenantId ? eq(backgroundJobs.tenantId, tenantId) : undefined)
+      .orderBy(desc(backgroundJobs.createdAt))
+      .limit(100);
+    return rows.map(r => ({ ...r.backgroundJobs, schedule: r.jobSchedules }));
   }
 
   static async getById(jobId: string, tenantId: string | null) {
-    return prisma.backgroundJob.findFirst({
-      where: {
-        id: jobId,
-        ...(tenantId ? { tenantId } : {}),
-      },
-      include: {
-        schedule: true,
-      },
-    });
+    const rows = await db.select().from(backgroundJobs)
+      .leftJoin(jobSchedules, eq(backgroundJobs.scheduleId, jobSchedules.id))
+      .where(and(eq(backgroundJobs.id, jobId), tenantId ? eq(backgroundJobs.tenantId, tenantId) : undefined))
+      .limit(1);
+    const r = rows[0];
+    return r ? { ...r.backgroundJobs, schedule: r.jobSchedules } : null;
   }
 
   static async retry(jobId: string) {
-    return prisma.backgroundJob.update({
-      where: { id: jobId },
-      data: {
-        status: 'queued',
-        error: null,
-        nextRetry: null,
-        completedAt: null,
-      },
-    });
+    const [job] = await db.update(backgroundJobs).set({
+      status: 'queued',
+      error: null,
+      nextRetry: null,
+      completedAt: null,
+      updatedAt: new Date(),
+    }).where(eq(backgroundJobs.id, jobId)).returning();
+    return job;
   }
 
   static async cancel(jobId: string, tenantId: string | null) {
-    return prisma.backgroundJob.updateMany({
-      where: {
-        id: jobId,
-        ...(tenantId ? { tenantId } : {}),
-      },
-      data: {
-        status: 'cancelled',
-        completedAt: new Date(),
-        updatedAt: new Date(),
-      },
-    });
+    const result = await db.update(backgroundJobs).set({
+      status: 'cancelled',
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(and(eq(backgroundJobs.id, jobId), tenantId ? eq(backgroundJobs.tenantId, tenantId) : undefined))
+      .returning({ id: backgroundJobs.id });
+    return { count: result.length };
   }
 
   static async markRunning(jobId: string) {
-    return prisma.backgroundJob.update({
-      where: { id: jobId },
-      data: {
-        status: 'running',
-      },
-    });
+    const [job] = await db.update(backgroundJobs).set({ status: 'running', updatedAt: new Date() })
+      .where(eq(backgroundJobs.id, jobId)).returning();
+    return job;
   }
 
   static async markCompleted(jobId: string, result?: unknown) {
-    return prisma.backgroundJob.update({
-      where: { id: jobId },
-      data: {
-        status: 'completed',
-        result: result == null ? null : JSON.stringify(result),
-        error: null,
-        completedAt: new Date(),
-      },
-    });
+    const [job] = await db.update(backgroundJobs).set({
+      status: 'completed',
+      result: result == null ? null : JSON.stringify(result),
+      error: null,
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(backgroundJobs.id, jobId)).returning();
+    return job;
   }
 
   static async markFailed(jobId: string, errorMessage: string) {
-    const job = await prisma.backgroundJob.findUnique({ where: { id: jobId } });
-    if (!job) return null;
-
-    const attempts = job.attempts + 1;
-    const hasRetries = attempts < job.maxAttempts;
-    return prisma.backgroundJob.update({
-      where: { id: jobId },
-      data: {
-        attempts,
-        status: hasRetries ? 'queued' : 'failed',
-        error: errorMessage,
-        nextRetry: hasRetries ? new Date(Date.now() + Math.pow(2, attempts) * 60000) : null,
-      },
-    });
+    const existing = await db.query.backgroundJobs.findFirst({ where: eq(backgroundJobs.id, jobId) });
+    if (!existing) return null;
+    const attempts = existing.attempts + 1;
+    const hasRetries = attempts < existing.maxAttempts;
+    const [job] = await db.update(backgroundJobs).set({
+      attempts,
+      status: hasRetries ? 'queued' : 'failed',
+      error: errorMessage,
+      nextRetry: hasRetries ? new Date(Date.now() + Math.pow(2, attempts) * 60000) : null,
+      updatedAt: new Date(),
+    }).where(eq(backgroundJobs.id, jobId)).returning();
+    return job;
   }
 
   static async claimNextJob() {
     const now = new Date();
-    const job = await prisma.backgroundJob.findFirst({
-      where: {
-        status: 'queued',
-        OR: [{ scheduledFor: null }, { scheduledFor: { lte: now } }],
-      },
-      orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+    const job = await db.query.backgroundJobs.findFirst({
+      where: and(
+        eq(backgroundJobs.status, 'queued'),
+        or(isNull(backgroundJobs.scheduledFor), lte(backgroundJobs.scheduledFor, now)),
+      ),
+      orderBy: [desc(backgroundJobs.priority), asc(backgroundJobs.createdAt)],
     });
-
     if (!job) return null;
-
-    const claimed = await prisma.backgroundJob.updateMany({
-      where: { id: job.id, status: 'queued' },
-      data: { status: 'running' },
-    });
-
-    if (claimed.count === 0) return null;
-    return prisma.backgroundJob.findUnique({ where: { id: job.id } });
+    const claimed = await db.update(backgroundJobs).set({ status: 'running', updatedAt: new Date() })
+      .where(and(eq(backgroundJobs.id, job.id), eq(backgroundJobs.status, 'queued')))
+      .returning({ id: backgroundJobs.id });
+    if (claimed.length === 0) return null;
+    return db.query.backgroundJobs.findFirst({ where: eq(backgroundJobs.id, job.id) });
   }
 
   static async listSchedules(tenantId: string) {
-    return prisma.jobSchedule.findMany({
-      where: { tenantId },
-      orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
-    });
+    return db.select().from(jobSchedules)
+      .where(eq(jobSchedules.tenantId, tenantId))
+      .orderBy(desc(jobSchedules.isActive), desc(jobSchedules.createdAt));
   }
 
   static async createSchedule(input: JobScheduleInput) {
-    return prisma.jobSchedule.create({
-      data: {
-        tenantId: input.tenantId,
-        name: input.name,
-        jobType: input.jobType,
-        cron: input.cron,
-        timezone: input.timezone ?? 'UTC',
-        payload: input.payload == null ? null : JSON.stringify(input.payload),
-        isActive: input.isActive ?? true,
-        nextRunAt: input.nextRunAt ?? null,
-      },
-    });
+    const [schedule] = await db.insert(jobSchedules).values({
+      tenantId: input.tenantId,
+      name: input.name,
+      jobType: input.jobType,
+      cron: input.cron,
+      timezone: input.timezone ?? 'UTC',
+      payload: input.payload == null ? null : JSON.stringify(input.payload),
+      isActive: input.isActive ?? true,
+      nextRunAt: input.nextRunAt ?? null,
+      updatedAt: new Date(),
+    }).returning();
+    return schedule;
   }
 
   static async updateSchedule(
@@ -5184,50 +5034,48 @@ export class JobService {
     tenantId: string,
     patch: Partial<{ name: string; cron: string; timezone: string; payload: unknown; isActive: boolean; nextRunAt: Date | null }>,
   ) {
-    return prisma.jobSchedule.updateMany({
-      where: { id, tenantId },
-      data: {
-        ...(patch.name !== undefined ? { name: patch.name } : {}),
-        ...(patch.cron !== undefined ? { cron: patch.cron } : {}),
-        ...(patch.timezone !== undefined ? { timezone: patch.timezone } : {}),
-        ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
-        ...(patch.nextRunAt !== undefined ? { nextRunAt: patch.nextRunAt } : {}),
-        ...(patch.payload !== undefined ? { payload: patch.payload == null ? null : JSON.stringify(patch.payload) } : {}),
-      },
-    });
+    const update: Record<string, unknown> = { updatedAt: new Date() };
+    if (patch.name !== undefined) update.name = patch.name;
+    if (patch.cron !== undefined) update.cron = patch.cron;
+    if (patch.timezone !== undefined) update.timezone = patch.timezone;
+    if (patch.isActive !== undefined) update.isActive = patch.isActive;
+    if (patch.nextRunAt !== undefined) update.nextRunAt = patch.nextRunAt;
+    if (patch.payload !== undefined) update.payload = patch.payload == null ? null : JSON.stringify(patch.payload);
+    const result = await db.update(jobSchedules).set(update as never)
+      .where(and(eq(jobSchedules.id, id), eq(jobSchedules.tenantId, tenantId)))
+      .returning({ id: jobSchedules.id });
+    return { count: result.length };
   }
 
   static async deleteSchedule(id: string, tenantId: string) {
-    return prisma.jobSchedule.deleteMany({
-      where: { id, tenantId },
-    });
+    const result = await db.delete(jobSchedules)
+      .where(and(eq(jobSchedules.id, id), eq(jobSchedules.tenantId, tenantId)))
+      .returning({ id: jobSchedules.id });
+    return { count: result.length };
   }
 
   static async listDueSchedules(now: Date) {
-    return prisma.jobSchedule.findMany({
-      where: {
-        isActive: true,
-        nextRunAt: { lte: now },
-      },
-      orderBy: { nextRunAt: 'asc' },
-    });
+    return db.select().from(jobSchedules)
+      .where(and(eq(jobSchedules.isActive, true), lte(jobSchedules.nextRunAt, now)))
+      .orderBy(asc(jobSchedules.nextRunAt));
   }
 
   static async touchScheduleRun(id: string, nextRunAt: Date) {
-    return prisma.jobSchedule.update({
-      where: { id },
-      data: {
-        lastRunAt: new Date(),
-        nextRunAt,
-      },
-    });
+    const [schedule] = await db.update(jobSchedules).set({
+      lastRunAt: new Date(),
+      nextRunAt,
+      updatedAt: new Date(),
+    }).where(eq(jobSchedules.id, id)).returning();
+    return schedule;
   }
 }
 `;
 }
 
 function dbLoggingTs(): string {
-  return `import { prisma, SettingsService } from './index.js';
+  return `import { db, SettingsService } from './index.js';
+import { logEntries, tenants } from './schema.js';
+import { eq, and, desc, gte, lte } from 'drizzle-orm';
 
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
@@ -5322,16 +5170,15 @@ export class LogService {
 
   static async create(input: LogCreateInput) {
     const details = serializeDetails(input.details);
-    return prisma.logEntry.create({
-      data: {
-        tenantId: input.tenantId,
-        environmentId: input.environmentId ?? null,
-        service: input.service,
-        level: input.level,
-        message: input.message,
-        details: details ?? null,
-      },
-    });
+    const [row] = await db.insert(logEntries).values({
+      tenantId: input.tenantId,
+      environmentId: input.environmentId ?? null,
+      service: input.service,
+      level: input.level,
+      message: input.message,
+      details: details ?? null,
+    }).returning();
+    return row;
   }
 
   static async list(
@@ -5339,47 +5186,32 @@ export class LogService {
     options?: { level?: LogLevel | 'all'; service?: string; from?: Date; to?: Date; limit?: number },
   ) {
     const limit = Math.min(500, Math.max(1, options?.limit ?? 100));
-    const rows = await prisma.logEntry.findMany({
-      where: {
-        tenantId,
-        ...(options?.level && options.level !== 'all' ? { level: options.level } : {}),
-        ...(options?.service ? { service: options.service } : {}),
-        ...(options?.from || options?.to
-          ? {
-              timestamp: {
-                ...(options.from ? { gte: options.from } : {}),
-                ...(options.to ? { lte: options.to } : {}),
-              },
-            }
-          : {}),
-      },
-      orderBy: { timestamp: 'desc' },
-      take: limit,
-    });
-
-    return rows.map((row) => ({
-      ...row,
-      details: parseDetails(row.details),
-    }));
+    const conditions = [eq(logEntries.tenantId, tenantId)] as ReturnType<typeof eq>[];
+    if (options?.level && options.level !== 'all') conditions.push(eq(logEntries.level, options.level) as never);
+    if (options?.service) conditions.push(eq(logEntries.service, options.service) as never);
+    if (options?.from) conditions.push(gte(logEntries.timestamp, options.from) as never);
+    if (options?.to) conditions.push(lte(logEntries.timestamp, options.to) as never);
+    const rows = await db.select().from(logEntries)
+      .where(and(...conditions))
+      .orderBy(desc(logEntries.timestamp))
+      .limit(limit);
+    return rows.map(row => ({ ...row, details: parseDetails(row.details) }));
   }
 
   static async purgeOlderThan(tenantId: string, retentionDays: number): Promise<number> {
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-    const result = await prisma.logEntry.deleteMany({
-      where: {
-        tenantId,
-        timestamp: { lt: cutoff },
-      },
-    });
-    return result.count;
+    const deleted = await db.delete(logEntries)
+      .where(and(eq(logEntries.tenantId, tenantId), lte(logEntries.timestamp, cutoff)))
+      .returning({ id: logEntries.id });
+    return deleted.length;
   }
 
   static async purgeUsingTenantSettings(): Promise<number> {
-    const tenants = await prisma.tenant.findMany({ select: { id: true } });
+    const allTenants = await db.select({ id: tenants.id }).from(tenants);
     let total = 0;
-    for (const tenant of tenants) {
-      const settings = await LogService.getSettings(tenant.id);
-      total += await LogService.purgeOlderThan(tenant.id, settings.retentionDays);
+    for (const tenant of allTenants) {
+      const s = await LogService.getSettings(tenant.id);
+      total += await LogService.purgeOlderThan(tenant.id, s.retentionDays);
     }
     return total;
   }
@@ -5387,40 +5219,66 @@ export class LogService {
 `;
 }
 
-function dbSeedScript(): string {
-  return `#!/usr/bin/env node
-import prismaPkg from '@prisma/client';
-import { createHash } from 'node:crypto';
+function dbSeedScript(options: InitScaffoldOptions): string {
+  const isSqlite = options.dbProvider === 'sqlite';
+  const clientSetup = isSqlite
+    ? `import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import * as schema from '../src/schema.js';
+
+const _url = process.env['DATABASE_URL'] ?? './dev.db';
+const _path = _url.startsWith('file:') ? _url.slice(5) : _url;
+const sqlite = new Database(_path);
+const db = drizzle(sqlite, { schema });`
+    : `import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import * as schema from '../src/schema.js';
+
+const client = postgres(process.env['DATABASE_URL']!);
+const db = drizzle(client, { schema });`;
+  return `import { createHash } from 'node:crypto';
+import { eq, and } from 'drizzle-orm';
 import { runModuleSeeders } from './seed-registry.mjs';
+${clientSetup}
+import { tenants, users, memberships, permissions, roles, rolePermissions, userRoles, settings } from '../src/schema.js';
 
-const { PrismaClient } = prismaPkg;
-
-const prisma = new PrismaClient();
-
-function hash(password) {
+function hash(password: string): string {
   return createHash('sha256').update(password).digest('hex');
 }
 
+async function upsertSetting(tenantId: string, module: string, key: string, value: string, dataType: string) {
+  const existing = await db.query.settings.findFirst({
+    where: and(
+      eq(settings.tenantId, tenantId),
+      eq(settings.module, module),
+      eq(settings.key, key),
+    ),
+  });
+  if (existing) {
+    await db.update(settings).set({ value, dataType, updatedAt: new Date() }).where(eq(settings.id, existing.id));
+  } else {
+    await db.insert(settings).values({ tenantId, environmentId: null, scope: 'tenant', module, key, value, dataType });
+  }
+}
+
 async function main() {
-  const tenant = await prisma.tenant.upsert({
-    where: { slug: 'local-demo' },
-    update: {},
-    create: { slug: 'local-demo', name: 'Local Demo Tenant' },
-  });
+  const now = new Date();
 
-  const user = await prisma.user.upsert({
-    where: { email: 'admin@local-demo.com' },
-    update: {},
-    create: { email: 'admin@local-demo.com', name: 'Local Admin', passwordHash: hash('Password1!') },
-  });
+  const [tenant] = await db.insert(tenants)
+    .values({ slug: 'local-demo', name: 'Local Demo Tenant' })
+    .onConflictDoUpdate({ target: [tenants.slug], set: { name: 'Local Demo Tenant' } })
+    .returning();
 
-  await prisma.membership.upsert({
-    where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
-    update: {},
-    create: { tenantId: tenant.id, userId: user.id, role: 'admin' },
-  });
+  const [user] = await db.insert(users)
+    .values({ email: 'admin@local-demo.com', name: 'Local Admin', passwordHash: hash('Password1!') })
+    .onConflictDoUpdate({ target: [users.email], set: { name: 'Local Admin' } })
+    .returning();
 
-  const permissions = [
+  await db.insert(memberships)
+    .values({ tenantId: tenant.id, userId: user.id, role: 'admin' })
+    .onConflictDoUpdate({ target: [memberships.tenantId, memberships.userId], set: { role: 'admin' } });
+
+  const permDefs: [string, string, string][] = [
     ['users', 'read', 'View users'],
     ['users', 'manage', 'Create/update users and assignments'],
     ['roles', 'read', 'View roles'],
@@ -5433,69 +5291,31 @@ async function main() {
     ['jobs', 'trigger', 'Trigger background jobs'],
   ];
 
-  for (const [module, action, description] of permissions) {
-    await prisma.permission.upsert({
-      where: { module_action: { module, action } },
-      update: { description },
-      create: { module, action, description },
-    });
+  for (const [module, action, description] of permDefs) {
+    await db.insert(permissions)
+      .values({ module, action, description, updatedAt: now })
+      .onConflictDoUpdate({ target: [permissions.module, permissions.action], set: { description, updatedAt: now } });
   }
 
-  const adminRole = await prisma.role.upsert({
-    where: { tenantId_name: { tenantId: tenant.id, name: 'Admin' } },
-    update: { description: 'Tenant administrator role' },
-    create: { tenantId: tenant.id, name: 'Admin', description: 'Tenant administrator role' },
-  });
+  const [adminRole] = await db.insert(roles)
+    .values({ tenantId: tenant.id, name: 'Admin', description: 'Tenant administrator role', updatedAt: now })
+    .onConflictDoUpdate({ target: [roles.tenantId, roles.name], set: { description: 'Tenant administrator role', updatedAt: now } })
+    .returning();
 
-  const allPerms = await prisma.permission.findMany();
+  const allPerms = await db.select().from(permissions);
   for (const perm of allPerms) {
-    await prisma.rolePermission.upsert({
-      where: { roleId_permissionId: { roleId: adminRole.id, permissionId: perm.id } },
-      update: {},
-      create: { roleId: adminRole.id, permissionId: perm.id },
-    });
+    await db.insert(rolePermissions)
+      .values({ roleId: adminRole.id, permissionId: perm.id })
+      .onConflictDoNothing();
   }
 
-  await prisma.userRole.upsert({
-    where: { userId_roleId: { userId: user.id, roleId: adminRole.id } },
-    update: {},
-    create: { userId: user.id, roleId: adminRole.id },
-  });
+  await db.insert(userRoles)
+    .values({ userId: user.id, roleId: adminRole.id })
+    .onConflictDoNothing();
 
-  const existingNotificationSetting = await (prisma.setting.findFirst as any)({
-    where: {
-      tenantId: tenant.id,
-      environmentId: null,
-      scope: 'tenant',
-      module: 'notifications',
-      key: 'emailEnabled',
-    },
-    select: { id: true },
-  });
+  await upsertSetting(tenant.id, 'notifications', 'emailEnabled', 'true', 'boolean');
 
-  if (existingNotificationSetting) {
-    await (prisma.setting.update as any)({
-      where: { id: existingNotificationSetting.id },
-      data: { value: 'true', dataType: 'boolean' },
-    });
-  } else {
-    await (prisma.setting.create as any)({
-      data: {
-        tenantId: tenant.id,
-        environmentId: null,
-        scope: 'tenant',
-        module: 'notifications',
-        key: 'emailEnabled',
-        value: 'true',
-        dataType: 'boolean',
-      },
-    });
-  }
-
-  await runModuleSeeders({
-    prisma,
-    tenantIds: [tenant.id],
-  });
+  await runModuleSeeders({ db, tenantIds: [tenant.id] });
 
   console.log('Seed complete');
   console.log('Email: admin@local-demo.com');
@@ -5503,15 +5323,9 @@ async function main() {
   console.log('TenantId: ' + tenant.id);
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+main().catch((e) => { console.error(e); process.exit(1); });
 `;
 }
-
 function dbSeedRegistryScript(): string {
   return `const moduleSeeders = [
 ];
@@ -5522,6 +5336,739 @@ export async function runModuleSeeders(context) {
   }
 }
 `;
+}
+
+function dbRbacTs(): string {
+  return `import { db } from './index.js';
+import { users, memberships, roles, userRoles, rolePermissions, permissions } from './schema.js';
+import { eq, and, inArray } from 'drizzle-orm';
+
+export class RbacService {
+  static async listUsers(tenantId: string) {
+    const memberRows = await db.select({ userId: memberships.userId }).from(memberships).where(eq(memberships.tenantId, tenantId));
+    const userIds = memberRows.map(r => r.userId);
+    if (userIds.length === 0) return [];
+
+    const [allUsers, tenantMemberships, tenantRoles] = await Promise.all([
+      db.select().from(users).where(inArray(users.id, userIds)),
+      db.select().from(memberships).where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, userIds))),
+      db.select({ id: roles.id }).from(roles).where(eq(roles.tenantId, tenantId)),
+    ]);
+
+    const tenantRoleIds = tenantRoles.map(r => r.id);
+    const urRows = tenantRoleIds.length > 0
+      ? await db.select().from(userRoles)
+          .leftJoin(roles, eq(userRoles.roleId, roles.id))
+          .where(and(inArray(userRoles.userId, userIds), inArray(userRoles.roleId, tenantRoleIds)))
+      : [];
+
+    return allUsers.map(u => ({
+      ...u,
+      memberships: tenantMemberships.filter(m => m.userId === u.id),
+      userRoles: urRows.filter(r => r.user_role.userId === u.id).map(r => ({ ...r.user_role, role: r.role })),
+    }));
+  }
+
+  static async getUserWithDetails(userId: string, tenantId: string) {
+    const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+    if (!user) return null;
+    const tenantMemberships = await db.select().from(memberships)
+      .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+    const tenantRoles = await db.select({ id: roles.id }).from(roles).where(eq(roles.tenantId, tenantId));
+    const tenantRoleIds = tenantRoles.map(r => r.id);
+    const urRows = tenantRoleIds.length > 0
+      ? await db.select().from(userRoles)
+          .leftJoin(roles, eq(userRoles.roleId, roles.id))
+          .where(and(eq(userRoles.userId, userId), inArray(userRoles.roleId, tenantRoleIds)))
+      : [];
+    return {
+      ...user,
+      memberships: tenantMemberships,
+      userRoles: urRows.map(r => ({ ...r.user_role, role: r.role })),
+    };
+  }
+
+  static async createUser(tenantId: string, email: string, name: string | null) {
+    const [user] = await db.insert(users).values({ email, name }).returning();
+    await db.insert(memberships).values({ tenantId, userId: user.id, role: 'member' }).onConflictDoNothing();
+    return RbacService.getUserWithDetails(user.id, tenantId);
+  }
+
+  static async updateUser(userId: string, tenantId: string, update: { name?: string; email?: string }) {
+    const membership = await db.query.memberships.findFirst({ where: and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)) });
+    if (!membership) return null;
+    if (Object.keys(update).length > 0) {
+      await db.update(users).set(update).where(eq(users.id, userId));
+    }
+    return RbacService.getUserWithDetails(userId, tenantId);
+  }
+
+  static async deleteUser(userId: string, tenantId: string) {
+    const membership = await db.query.memberships.findFirst({ where: and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)) });
+    if (!membership) return false;
+    const tenantRoles = await db.select({ id: roles.id }).from(roles).where(eq(roles.tenantId, tenantId));
+    const tenantRoleIds = tenantRoles.map(r => r.id);
+    if (tenantRoleIds.length > 0) {
+      await db.delete(userRoles).where(and(eq(userRoles.userId, userId), inArray(userRoles.roleId, tenantRoleIds)));
+    }
+    await db.delete(memberships).where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+    const remaining = await db.select({ id: memberships.id }).from(memberships).where(eq(memberships.userId, userId));
+    if (remaining.length === 0) await db.delete(users).where(eq(users.id, userId));
+    return true;
+  }
+
+  static async assignRole(userId: string, roleId: string, tenantId: string) {
+    const role = await db.query.roles.findFirst({ where: and(eq(roles.id, roleId), eq(roles.tenantId, tenantId)) });
+    if (!role) return null;
+    const [assignment] = await db.insert(userRoles).values({ userId, roleId }).returning();
+    return { ...assignment, role };
+  }
+
+  static async removeRoleAssignment(id: string, tenantId: string) {
+    const assignment = await db.query.userRoles.findFirst({ where: eq(userRoles.id, id) });
+    if (!assignment) return null;
+    const role = await db.query.roles.findFirst({ where: eq(roles.id, assignment.roleId) });
+    if (!role || role.tenantId !== tenantId) return null;
+    const [removed] = await db.delete(userRoles).where(eq(userRoles.id, id)).returning();
+    return removed;
+  }
+
+  static async listRoles(tenantId: string) {
+    const allRoles = await db.select().from(roles).where(eq(roles.tenantId, tenantId)).orderBy(roles.createdAt);
+    const roleIds = allRoles.map(r => r.id);
+    const permRows = roleIds.length > 0
+      ? await db.select().from(rolePermissions)
+          .leftJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+          .where(inArray(rolePermissions.roleId, roleIds))
+      : [];
+    return allRoles.map(role => ({
+      ...role,
+      permissions: permRows.filter(p => p.role_permission.roleId === role.id).map(p => ({ ...p.role_permission, permission: p.permission })),
+    }));
+  }
+
+  static async createRole(tenantId: string, name: string, description: string | null) {
+    const [role] = await db.insert(roles).values({ tenantId, name, description, updatedAt: new Date() }).returning();
+    return { ...role, permissions: [] };
+  }
+
+  static async updateRole(roleId: string, update: { name?: string; description?: string }) {
+    const [updated] = await db.update(roles).set({ ...update, updatedAt: new Date() }).where(eq(roles.id, roleId)).returning();
+    return updated ? { ...updated, permissions: [] } : null;
+  }
+
+  static async deleteRole(roleId: string, tenantId: string) {
+    const role = await db.query.roles.findFirst({ where: and(eq(roles.id, roleId), eq(roles.tenantId, tenantId)) });
+    if (!role) return false;
+    await db.delete(roles).where(eq(roles.id, roleId));
+    return true;
+  }
+
+  static async assignPermission(roleId: string, permissionId: string, tenantId: string) {
+    const role = await db.query.roles.findFirst({ where: and(eq(roles.id, roleId), eq(roles.tenantId, tenantId)) });
+    if (!role) return null;
+    const [assignment] = await db.insert(rolePermissions).values({ roleId, permissionId }).returning();
+    const perm = await db.query.permissions.findFirst({ where: eq(permissions.id, permissionId) });
+    return { ...assignment, permission: perm };
+  }
+
+  static async removePermissionAssignment(id: string, tenantId: string) {
+    const assignment = await db.query.rolePermissions.findFirst({ where: eq(rolePermissions.id, id) });
+    if (!assignment) return null;
+    const role = await db.query.roles.findFirst({ where: eq(roles.id, assignment.roleId) });
+    if (!role || role.tenantId !== tenantId) return null;
+    const [removed] = await db.delete(rolePermissions).where(eq(rolePermissions.id, id)).returning();
+    return removed;
+  }
+
+  static async listPermissions() {
+    return db.select().from(permissions).orderBy(permissions.module, permissions.action);
+  }
+
+  static async createPermission(module: string, action: string, description: string | null) {
+    const [perm] = await db.insert(permissions).values({ module, action, description, updatedAt: new Date() }).returning();
+    return perm;
+  }
+
+  static async updatePermission(permissionId: string, update: { module?: string; action?: string; description?: string }) {
+    const [updated] = await db.update(permissions).set({ ...update, updatedAt: new Date() }).where(eq(permissions.id, permissionId)).returning();
+    return updated;
+  }
+
+  static async deletePermission(permissionId: string) {
+    await db.delete(permissions).where(eq(permissions.id, permissionId));
+  }
+
+  static async hasPermission(userId: string, tenantId: string, module: string, action: string): Promise<boolean> {
+    const results = await db.select({ id: userRoles.id })
+      .from(userRoles)
+      .innerJoin(roles, and(eq(userRoles.roleId, roles.id), eq(roles.tenantId, tenantId)))
+      .innerJoin(rolePermissions, eq(rolePermissions.roleId, roles.id))
+      .innerJoin(permissions, and(
+        eq(rolePermissions.permissionId, permissions.id),
+        eq(permissions.module, module),
+        eq(permissions.action, action),
+      ))
+      .where(eq(userRoles.userId, userId))
+      .limit(1);
+    return results.length > 0;
+  }
+}
+`;
+}
+
+function drizzleConfigTs(options: InitScaffoldOptions): string {
+  const dialect = options.dbProvider === 'sqlite' ? 'sqlite' : options.dbProvider === 'mysql' ? 'mysql' : 'postgresql';
+  return `import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  schema: './src/schema.ts',
+  out: './drizzle',
+  dialect: '${dialect}',
+  dbCredentials: {
+    url: process.env['DATABASE_URL']!,
+  },
+});
+`.replace('${dialect}', dialect);
+}
+
+function dbSchemaTs(options: InitScaffoldOptions): string {
+  if (options.dbProvider === 'sqlite') {
+    const authServerTable = options.authServer ? `
+export const authServerSettings = sqliteTable('auth_server_setting', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().unique().references(() => tenants.id, { onDelete: 'cascade' }),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+  provider: text('provider'),
+  issuerUrl: text('issuer_url'),
+  jwksUrl: text('jwks_url'),
+  clientId: text('client_id'),
+  clientSecret: text('client_secret'),
+  audience: text('audience'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+});
+` : '';
+    return `import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+
+function genId() { return crypto.randomUUID(); }
+function now() { return new Date(); }
+
+export const tenants = sqliteTable('tenant', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+});
+
+export const environments = sqliteTable('environment', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('env_tenant_name_idx').on(t.tenantId, t.name),
+]);
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  email: text('email').notNull().unique(),
+  name: text('name'),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+});
+
+export const memberships = sqliteTable('membership', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').notNull().default('member'),
+  environmentId: text('environment_id').references(() => environments.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('membership_tenant_user_idx').on(t.tenantId, t.userId),
+]);
+
+export const auditLogs = sqliteTable('audit_log', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  action: text('action').notNull(),
+  entityType: text('entity_type').notNull(),
+  entityId: text('entity_id'),
+  traceId: text('trace_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+});
+
+export const settings = sqliteTable('setting', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+  environmentId: text('environment_id').references(() => environments.id, { onDelete: 'set null' }),
+  scope: text('scope').notNull().default('tenant'),
+  module: text('module').notNull(),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+  dataType: text('data_type').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('setting_tenant_env_scope_module_key_idx').on(t.tenantId, t.environmentId, t.scope, t.module, t.key),
+  index('setting_tenant_scope_module_idx').on(t.tenantId, t.scope, t.module),
+]);
+
+export const permissions = sqliteTable('permission', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  module: text('module').notNull(),
+  action: text('action').notNull(),
+  description: text('description'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('permission_module_action_idx').on(t.module, t.action),
+]);
+
+export const roles = sqliteTable('role', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('role_tenant_name_idx').on(t.tenantId, t.name),
+]);
+
+export const userRoles = sqliteTable('user_role', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  roleId: text('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('user_role_user_role_idx').on(t.userId, t.roleId),
+]);
+
+export const rolePermissions = sqliteTable('role_permission', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  roleId: text('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  permissionId: text('permission_id').notNull().references(() => permissions.id, { onDelete: 'cascade' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('role_permission_role_perm_idx').on(t.roleId, t.permissionId),
+]);
+
+export const billingCustomers = sqliteTable('billing_customer', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull().default('stripe'),
+  externalCustomerId: text('external_customer_id').notNull(),
+  email: text('email'),
+  name: text('name'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('billing_customer_tenant_provider_ext_idx').on(t.tenantId, t.provider, t.externalCustomerId),
+  index('billing_customer_tenant_provider_idx').on(t.tenantId, t.provider),
+]);
+
+export const billingSubscriptions = sqliteTable('billing_subscription', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  customerId: text('customer_id').notNull().references(() => billingCustomers.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull().default('stripe'),
+  externalSubscriptionId: text('external_subscription_id').notNull(),
+  planCode: text('plan_code').notNull(),
+  status: text('status').notNull(),
+  currency: text('currency').notNull().default('USD'),
+  cancelAtPeriodEnd: integer('cancel_at_period_end', { mode: 'boolean' }).notNull().default(false),
+  currentPeriodStart: integer('current_period_start', { mode: 'timestamp' }),
+  currentPeriodEnd: integer('current_period_end', { mode: 'timestamp' }),
+  cancelledAt: integer('cancelled_at', { mode: 'timestamp' }),
+  metadata: text('metadata'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('billing_sub_tenant_provider_ext_idx').on(t.tenantId, t.provider, t.externalSubscriptionId),
+  index('billing_sub_tenant_status_idx').on(t.tenantId, t.status),
+]);
+
+export const billingEvents = sqliteTable('billing_event', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull().default('stripe'),
+  eventType: text('event_type').notNull(),
+  externalEventId: text('external_event_id'),
+  payload: text('payload').notNull(),
+  status: text('status').notNull(),
+  error: text('error'),
+  receivedAt: integer('received_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  processedAt: integer('processed_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  index('billing_event_tenant_received_idx').on(t.tenantId, t.receivedAt),
+  index('billing_event_external_idx').on(t.externalEventId),
+]);
+
+export const notificationTemplates = sqliteTable('notification_template', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  key: text('key').notNull(),
+  channel: text('channel').notNull(),
+  provider: text('provider'),
+  subject: text('subject'),
+  body: text('body').notNull(),
+  variablesSchema: text('variables_schema'),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('notif_template_tenant_key_idx').on(t.tenantId, t.key),
+  index('notif_template_tenant_channel_active_idx').on(t.tenantId, t.channel, t.isActive),
+]);
+
+export const notificationDeliveries = sqliteTable('notification_delivery', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  templateId: text('template_id').references(() => notificationTemplates.id, { onDelete: 'set null' }),
+  channel: text('channel').notNull(),
+  provider: text('provider'),
+  recipient: text('recipient').notNull(),
+  subject: text('subject'),
+  body: text('body').notNull(),
+  payload: text('payload'),
+  status: text('status').notNull(),
+  externalMessageId: text('external_message_id'),
+  error: text('error'),
+  sentAt: integer('sent_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  index('notif_delivery_tenant_created_idx').on(t.tenantId, t.createdAt),
+  index('notif_delivery_tenant_status_idx').on(t.tenantId, t.status),
+]);
+
+export const logEntries = sqliteTable('log_entry', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  environmentId: text('environment_id').references(() => environments.id, { onDelete: 'set null' }),
+  service: text('service').notNull(),
+  level: text('level').notNull(),
+  message: text('message').notNull(),
+  details: text('details'),
+  timestamp: integer('timestamp', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  index('log_entry_tenant_ts_idx').on(t.tenantId, t.timestamp),
+  index('log_entry_svc_level_ts_idx').on(t.service, t.level, t.timestamp),
+]);
+
+export const jobSchedules = sqliteTable('job_schedule', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  jobType: text('job_type').notNull(),
+  cron: text('cron').notNull(),
+  timezone: text('timezone').notNull().default('UTC'),
+  payload: text('payload'),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
+  nextRunAt: integer('next_run_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('job_schedule_tenant_name_idx').on(t.tenantId, t.name),
+  index('job_schedule_tenant_active_next_idx').on(t.tenantId, t.isActive, t.nextRunAt),
+]);
+
+export const backgroundJobs = sqliteTable('background_job', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+  scheduleId: text('schedule_id').references(() => jobSchedules.id, { onDelete: 'set null' }),
+  jobType: text('job_type').notNull(),
+  status: text('status').notNull(),
+  priority: integer('priority').notNull().default(0),
+  payload: text('payload'),
+  result: text('result'),
+  error: text('error'),
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  nextRetry: integer('next_retry', { mode: 'timestamp' }),
+  scheduledFor: integer('scheduled_for', { mode: 'timestamp' }),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(now).notNull(),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+}, (t) => [
+  index('bg_job_tenant_status_scheduled_idx').on(t.tenantId, t.status, t.scheduledFor),
+  index('bg_job_schedule_idx').on(t.scheduleId),
+]);
+${authServerTable}`;
+  }
+
+  // PostgreSQL schema
+  const authServerTable = options.authServer ? `
+export const authServerSettings = pgTable('auth_server_setting', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().unique().references(() => tenants.id, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').notNull().default(false),
+  provider: text('provider'),
+  issuerUrl: text('issuer_url'),
+  jwksUrl: text('jwks_url'),
+  clientId: text('client_id'),
+  clientSecret: text('client_secret'),
+  audience: text('audience'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+});
+` : '';
+  return `import { pgTable, text, boolean, timestamp, integer, index, uniqueIndex } from 'drizzle-orm/pg-core';
+
+function genId() { return crypto.randomUUID(); }
+function now() { return new Date(); }
+
+export const tenants = pgTable('tenant', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+});
+
+export const environments = pgTable('environment', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  isDefault: boolean('is_default').notNull().default(false),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('env_tenant_name_idx').on(t.tenantId, t.name),
+]);
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  email: text('email').notNull().unique(),
+  name: text('name'),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+});
+
+export const memberships = pgTable('membership', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').notNull().default('member'),
+  environmentId: text('environment_id').references(() => environments.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('membership_tenant_user_idx').on(t.tenantId, t.userId),
+]);
+
+export const auditLogs = pgTable('audit_log', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  action: text('action').notNull(),
+  entityType: text('entity_type').notNull(),
+  entityId: text('entity_id'),
+  traceId: text('trace_id'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+});
+
+export const settings = pgTable('setting', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+  environmentId: text('environment_id').references(() => environments.id, { onDelete: 'set null' }),
+  scope: text('scope').notNull().default('tenant'),
+  module: text('module').notNull(),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+  dataType: text('data_type').notNull(),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('setting_tenant_env_scope_module_key_idx').on(t.tenantId, t.environmentId, t.scope, t.module, t.key),
+  index('setting_tenant_scope_module_idx').on(t.tenantId, t.scope, t.module),
+]);
+
+export const permissions = pgTable('permission', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  module: text('module').notNull(),
+  action: text('action').notNull(),
+  description: text('description'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('permission_module_action_idx').on(t.module, t.action),
+]);
+
+export const roles = pgTable('role', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('role_tenant_name_idx').on(t.tenantId, t.name),
+]);
+
+export const userRoles = pgTable('user_role', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  roleId: text('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('user_role_user_role_idx').on(t.userId, t.roleId),
+]);
+
+export const rolePermissions = pgTable('role_permission', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  roleId: text('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  permissionId: text('permission_id').notNull().references(() => permissions.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('role_permission_role_perm_idx').on(t.roleId, t.permissionId),
+]);
+
+export const billingCustomers = pgTable('billing_customer', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull().default('stripe'),
+  externalCustomerId: text('external_customer_id').notNull(),
+  email: text('email'),
+  name: text('name'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('billing_customer_tenant_provider_ext_idx').on(t.tenantId, t.provider, t.externalCustomerId),
+  index('billing_customer_tenant_provider_idx').on(t.tenantId, t.provider),
+]);
+
+export const billingSubscriptions = pgTable('billing_subscription', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  customerId: text('customer_id').notNull().references(() => billingCustomers.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull().default('stripe'),
+  externalSubscriptionId: text('external_subscription_id').notNull(),
+  planCode: text('plan_code').notNull(),
+  status: text('status').notNull(),
+  currency: text('currency').notNull().default('USD'),
+  cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+  currentPeriodStart: timestamp('current_period_start'),
+  currentPeriodEnd: timestamp('current_period_end'),
+  cancelledAt: timestamp('cancelled_at'),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('billing_sub_tenant_provider_ext_idx').on(t.tenantId, t.provider, t.externalSubscriptionId),
+  index('billing_sub_tenant_status_idx').on(t.tenantId, t.status),
+]);
+
+export const billingEvents = pgTable('billing_event', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull().default('stripe'),
+  eventType: text('event_type').notNull(),
+  externalEventId: text('external_event_id'),
+  payload: text('payload').notNull(),
+  status: text('status').notNull(),
+  error: text('error'),
+  receivedAt: timestamp('received_at').$defaultFn(now).notNull(),
+  processedAt: timestamp('processed_at').$defaultFn(now).notNull(),
+}, (t) => [
+  index('billing_event_tenant_received_idx').on(t.tenantId, t.receivedAt),
+  index('billing_event_external_idx').on(t.externalEventId),
+]);
+
+export const notificationTemplates = pgTable('notification_template', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  key: text('key').notNull(),
+  channel: text('channel').notNull(),
+  provider: text('provider'),
+  subject: text('subject'),
+  body: text('body').notNull(),
+  variablesSchema: text('variables_schema'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('notif_template_tenant_key_idx').on(t.tenantId, t.key),
+  index('notif_template_tenant_channel_active_idx').on(t.tenantId, t.channel, t.isActive),
+]);
+
+export const notificationDeliveries = pgTable('notification_delivery', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  templateId: text('template_id').references(() => notificationTemplates.id, { onDelete: 'set null' }),
+  channel: text('channel').notNull(),
+  provider: text('provider'),
+  recipient: text('recipient').notNull(),
+  subject: text('subject'),
+  body: text('body').notNull(),
+  payload: text('payload'),
+  status: text('status').notNull(),
+  externalMessageId: text('external_message_id'),
+  error: text('error'),
+  sentAt: timestamp('sent_at'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+}, (t) => [
+  index('notif_delivery_tenant_created_idx').on(t.tenantId, t.createdAt),
+  index('notif_delivery_tenant_status_idx').on(t.tenantId, t.status),
+]);
+
+export const logEntries = pgTable('log_entry', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  environmentId: text('environment_id').references(() => environments.id, { onDelete: 'set null' }),
+  service: text('service').notNull(),
+  level: text('level').notNull(),
+  message: text('message').notNull(),
+  details: text('details'),
+  timestamp: timestamp('timestamp').$defaultFn(now).notNull(),
+}, (t) => [
+  index('log_entry_tenant_ts_idx').on(t.tenantId, t.timestamp),
+  index('log_entry_svc_level_ts_idx').on(t.service, t.level, t.timestamp),
+]);
+
+export const jobSchedules = pgTable('job_schedule', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  jobType: text('job_type').notNull(),
+  cron: text('cron').notNull(),
+  timezone: text('timezone').notNull().default('UTC'),
+  payload: text('payload'),
+  isActive: boolean('is_active').notNull().default(true),
+  lastRunAt: timestamp('last_run_at'),
+  nextRunAt: timestamp('next_run_at'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+}, (t) => [
+  uniqueIndex('job_schedule_tenant_name_idx').on(t.tenantId, t.name),
+  index('job_schedule_tenant_active_next_idx').on(t.tenantId, t.isActive, t.nextRunAt),
+]);
+
+export const backgroundJobs = pgTable('background_job', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+  scheduleId: text('schedule_id').references(() => jobSchedules.id, { onDelete: 'set null' }),
+  jobType: text('job_type').notNull(),
+  status: text('status').notNull(),
+  priority: integer('priority').notNull().default(0),
+  payload: text('payload'),
+  result: text('result'),
+  error: text('error'),
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  nextRetry: timestamp('next_retry'),
+  scheduledFor: timestamp('scheduled_for'),
+  completedAt: timestamp('completed_at'),
+  createdAt: timestamp('created_at').$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at').$defaultFn(now).notNull(),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+}, (t) => [
+  index('bg_job_tenant_status_scheduled_idx').on(t.tenantId, t.status, t.scheduledFor),
+  index('bg_job_schedule_idx').on(t.scheduleId),
+]);
+${authServerTable}`;
 }
 
 function prismaSchema(options: InitScaffoldOptions): string {
