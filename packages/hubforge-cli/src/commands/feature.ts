@@ -9,6 +9,7 @@ type FeatureType =
   | 'api'
   | 'api-resource'
   | 'admin-resource'
+  | 'domain-resource'
   | 'ui'
   | 'public-page'
   | 'tenant-module'
@@ -87,6 +88,11 @@ export const ${toCamelCase(featureName)}CreatedEvent = z.object({
       apiResourceEventTs(slug, featureName),
     );
     await patchApiServerTs(targetDir, slug, pascal);
+    return;
+  }
+
+  if (type === 'domain-resource') {
+    await createDomainResource(featureName, slug, pascal, title, targetDir);
     return;
   }
 
@@ -297,11 +303,407 @@ def run() -> None:
   );
 }
 
+async function createDomainResource(
+  _featureName: string,
+  slug: string,
+  pascal: string,
+  title: string,
+  targetDir: string,
+): Promise<void> {
+  // 1. Drizzle table schema appended to packages/db/src/fieldops.ts
+  const fieldopsSchemaPath = path.join(targetDir, 'packages', 'db', 'src', 'fieldops.ts');
+  let existingSchema = '';
+  try {
+    existingSchema = await readFile(fieldopsSchemaPath, 'utf8');
+  } catch {
+    existingSchema = domainSchemaHeader();
+  }
+  const tableExport = `export const fo${pascal}s`;
+  if (!existingSchema.includes(tableExport)) {
+    existingSchema = `${existingSchema.trimEnd()}\n\n${domainTableTs(slug, pascal, title)}\n`;
+    await writeTextFile(fieldopsSchemaPath, existingSchema);
+  }
+
+  // 2. API route using Drizzle
+  await writeTextFile(
+    path.join(targetDir, 'apps', 'api', 'src', 'routes', `${slug}.ts`),
+    domainResourceRouteTs(slug, pascal),
+  );
+  await patchApiServerTs(targetDir, slug, pascal);
+
+  // 3. Portal pages (list + detail + new)
+  await writeTextFile(
+    path.join(targetDir, 'apps', 'portal', 'app', 'routes', `_app.${slug}._index.tsx`),
+    domainResourceListPageTsx(pascal, title, slug),
+  );
+  await writeTextFile(
+    path.join(targetDir, 'apps', 'portal', 'app', 'routes', `_app.${slug}.$id.tsx`),
+    domainResourceDetailPageTsx(pascal, title, slug),
+  );
+  await writeTextFile(
+    path.join(targetDir, 'apps', 'portal', 'app', 'routes', `_app.${slug}.new.tsx`),
+    domainResourceNewPageTsx(pascal, title, slug),
+  );
+}
+
+function domainSchemaHeader(): string {
+  return `import { pgTable, text, boolean, timestamp, doublePrecision, index } from 'drizzle-orm/pg-core';
+import { tenants } from './schema.js';
+
+const now = () => new Date();
+const genId = () => crypto.randomUUID();
+`;
+}
+
+function domainTableTs(slug: string, pascal: string, title: string): string {
+  const tableSlug = slug.replace(/-/g, '_');
+  return `// ── ${title} ──────────────────────────────────────────────────────────────────
+export const fo${pascal}s = pgTable('fo_${tableSlug}', {
+  id: text('id').primaryKey().$defaultFn(genId),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  status: text('status').notNull().default('active'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { mode: 'date' }).$defaultFn(now).notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'date' }).$defaultFn(now).notNull(),
+}, (t) => [
+  index('fo_${tableSlug}_tenant_idx').on(t.tenantId),
+  index('fo_${tableSlug}_tenant_active_idx').on(t.tenantId, t.isActive),
+]);`;
+}
+
+function domainResourceRouteTs(slug: string, pascal: string): string {
+  return `import type { Hono } from 'hono';
+import { db, fo${pascal}s } from '@hubforge/db';
+import { eq, and, desc, ilike, sql } from 'drizzle-orm';
+
+export function register${pascal}Routes(app: Hono): void {
+  app.get('/v1/${slug}', async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const search = c.req.query('search');
+    const page = Math.max(1, Number(c.req.query('page') ?? 1));
+    const limit = Math.min(100, Number(c.req.query('limit') ?? 20));
+    const conditions = [eq(fo${pascal}s.tenantId, tenantId)];
+    if (search) conditions.push(ilike(fo${pascal}s.name, \`%\${search}%\`));
+    const [items, [{ total }]] = await Promise.all([
+      db.select().from(fo${pascal}s).where(and(...conditions))
+        .orderBy(desc(fo${pascal}s.createdAt)).limit(limit).offset((page - 1) * limit),
+      db.select({ total: sql<number>\`count(*)::int\` }).from(fo${pascal}s).where(and(...conditions)),
+    ]);
+    return c.json({ items, total, page, limit });
+  });
+
+  app.get('/v1/${slug}/:id', async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const item = await db.query.fo${pascal}s.findFirst({
+      where: and(eq(fo${pascal}s.id, c.req.param('id')), eq(fo${pascal}s.tenantId, tenantId)),
+    });
+    if (!item) return c.json({ error: 'Not found' }, 404);
+    return c.json(item);
+  });
+
+  app.post('/v1/${slug}', async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (typeof body['name'] !== 'string' || !body['name'].trim()) {
+      return c.json({ error: 'name is required' }, 400);
+    }
+    const [item] = await db.insert(fo${pascal}s).values({
+      tenantId,
+      name: body['name'].trim(),
+      description: typeof body['description'] === 'string' ? body['description'] : null,
+      status: typeof body['status'] === 'string' ? body['status'] : 'active',
+      updatedAt: new Date(),
+    }).returning();
+    return c.json(item, 201);
+  });
+
+  app.patch('/v1/${slug}/:id', async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (typeof body['name'] === 'string') patch['name'] = body['name'].trim();
+    if (typeof body['description'] === 'string') patch['description'] = body['description'];
+    if (typeof body['status'] === 'string') patch['status'] = body['status'];
+    if (typeof body['isActive'] === 'boolean') patch['isActive'] = body['isActive'];
+    const [updated] = await db.update(fo${pascal}s).set(patch as never)
+      .where(and(eq(fo${pascal}s.id, c.req.param('id')), eq(fo${pascal}s.tenantId, tenantId))).returning();
+    if (!updated) return c.json({ error: 'Not found' }, 404);
+    return c.json(updated);
+  });
+
+  app.delete('/v1/${slug}/:id', async (c) => {
+    const tenantId = c.req.header('x-tenant-id');
+    if (!tenantId) return c.json({ error: 'x-tenant-id required' }, 400);
+    const [deleted] = await db.delete(fo${pascal}s)
+      .where(and(eq(fo${pascal}s.id, c.req.param('id')), eq(fo${pascal}s.tenantId, tenantId)))
+      .returning({ id: fo${pascal}s.id });
+    if (!deleted) return c.json({ error: 'Not found' }, 404);
+    return c.json({ deleted: true });
+  });
+}
+`;
+}
+
+function domainResourceListPageTsx(pascal: string, title: string, slug: string): string {
+  return `import { useLoaderData, Link } from 'react-router';
+import type { LoaderFunctionArgs } from 'react-router';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type ${pascal}Item = { id: string; name: string; description: string | null; status: string; isActive: boolean; createdAt: string };
+
+export async function clientLoader({ request }: LoaderFunctionArgs) {
+  const url = new URL(request.url);
+  const search = url.searchParams.get('search') ?? '';
+  const page = Number(url.searchParams.get('page') ?? '1');
+  const tenantId = typeof window !== 'undefined' ? (localStorage.getItem('tenantId') ?? '') : '';
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') ?? '') : '';
+  try {
+    const params = new URLSearchParams({ page: String(page), limit: '20' });
+    if (search) params.set('search', search);
+    const res = await fetch(\`\${API}/v1/${slug}?\${params}\`, { headers: { 'x-tenant-id': tenantId, authorization: \`Bearer \${token}\` } });
+    if (res.ok) {
+      const data = (await res.json()) as { items: ${pascal}Item[]; total: number; page: number; limit: number };
+      return { ...data, search, error: null };
+    }
+    return { items: [] as ${pascal}Item[], total: 0, page: 1, limit: 20, search, error: \`API \${res.status}\` };
+  } catch {
+    return { items: [] as ${pascal}Item[], total: 0, page: 1, limit: 20, search, error: 'API unavailable' };
+  }
+}
+
+export default function ${pascal}ListPage() {
+  const { items, total, page, limit, search, error } = useLoaderData<typeof clientLoader>();
+  const totalPages = Math.ceil(total / limit);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+        <div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>${title}</h2>
+          <p style={{ color: '#6b7280', fontSize: '0.875rem', margin: 0 }}>{total} record(s)</p>
+        </div>
+        <Link to="/${slug}/new" style={{ padding: '0.5rem 1.25rem', background: '#2563eb', color: '#fff', borderRadius: 8, textDecoration: 'none', fontSize: '0.875rem', fontWeight: 600 }}>+ New ${title}</Link>
+      </div>
+      <form method="get" style={{ marginBottom: '1rem', display: 'flex', gap: 8 }}>
+        <input name="search" defaultValue={search} placeholder="Search..." style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem', width: 280, outline: 'none' }} />
+        <button type="submit" style={{ padding: '8px 16px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer', fontSize: '0.875rem' }}>Search</button>
+      </form>
+      {error && <p style={{ color: '#ef4444', fontSize: '0.875rem', marginBottom: '0.75rem' }}>⚠️ {error}</p>}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead style={{ background: '#f8fafc' }}>
+            <tr>
+              {['Name', 'Status', 'Created', ''].map((h) => (
+                <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 && <tr><td colSpan={4} style={{ padding: '2rem', textAlign: 'center', color: '#9ca3af' }}>No ${title.toLowerCase()} records found.</td></tr>}
+            {items.map((item) => (
+              <tr key={item.id} style={{ borderTop: '1px solid #f1f5f9' }}>
+                <td style={{ padding: '12px 16px' }}>
+                  <p style={{ margin: '0 0 2px', fontWeight: 500, color: '#111827', fontSize: '0.875rem' }}>{item.name}</p>
+                  {item.description && <p style={{ margin: 0, fontSize: '0.75rem', color: '#9ca3af' }}>{item.description}</p>}
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: '0.72rem', fontWeight: 600, background: item.isActive ? '#dcfce7' : '#f1f5f9', color: item.isActive ? '#166534' : '#64748b' }}>
+                    {item.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+                <td style={{ padding: '12px 16px', fontSize: '0.8rem', color: '#6b7280' }}>{new Date(item.createdAt).toLocaleDateString()}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <Link to={\`/${slug}/\${item.id}\`} style={{ color: '#2563eb', fontSize: '0.875rem', textDecoration: 'none', fontWeight: 500 }}>View →</Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', gap: 8, marginTop: '1rem', justifyContent: 'flex-end' }}>
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+            <a key={p} href={\`?page=\${p}\${search ? \`&search=\${encodeURIComponent(search)}\` : ''}\`}
+              style={{ padding: '4px 10px', borderRadius: 6, background: p === page ? '#2563eb' : '#f3f4f6', color: p === page ? '#fff' : '#374151', textDecoration: 'none', fontSize: '0.875rem' }}>{p}</a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+`;
+}
+
+function domainResourceDetailPageTsx(pascal: string, title: string, slug: string): string {
+  return `import { useLoaderData, Link, useFetcher } from 'react-router';
+import type { LoaderFunctionArgs } from 'react-router';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+type ${pascal}Item = { id: string; name: string; description: string | null; status: string; isActive: boolean; createdAt: string; updatedAt: string };
+
+export async function clientLoader({ params }: LoaderFunctionArgs) {
+  const tenantId = typeof window !== 'undefined' ? (localStorage.getItem('tenantId') ?? '') : '';
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') ?? '') : '';
+  try {
+    const res = await fetch(\`\${API}/v1/${slug}/\${params['id']}\`, { headers: { 'x-tenant-id': tenantId, authorization: \`Bearer \${token}\` } });
+    if (res.ok) return { item: (await res.json()) as ${pascal}Item, error: null };
+    return { item: null, error: \`API \${res.status}\` };
+  } catch {
+    return { item: null, error: 'API unavailable' };
+  }
+}
+
+export async function clientAction({ params, request }: LoaderFunctionArgs) {
+  const tenantId = typeof window !== 'undefined' ? (localStorage.getItem('tenantId') ?? '') : '';
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') ?? '') : '';
+  const fd = await request.formData();
+  const intent = fd.get('intent') as string;
+  const headers = { 'x-tenant-id': tenantId, authorization: \`Bearer \${token}\`, 'content-type': 'application/json' };
+  if (intent === 'toggle') {
+    const item = JSON.parse(fd.get('item') as string) as ${pascal}Item;
+    await fetch(\`\${API}/v1/${slug}/\${params['id']}\`, {
+      method: 'PATCH', headers, body: JSON.stringify({ isActive: !item.isActive }),
+    });
+  }
+  return null;
+}
+
+export default function ${pascal}DetailPage() {
+  const { item, error } = useLoaderData<typeof clientLoader>();
+  const fetcher = useFetcher();
+
+  if (error || !item) {
+    return (
+      <div>
+        <Link to="/${slug}" style={{ color: '#2563eb', fontSize: '0.875rem' }}>← Back to ${title}</Link>
+        <p style={{ color: '#ef4444', marginTop: '1rem' }}>Error: {error ?? 'Not found'}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <Link to="/${slug}" style={{ color: '#6b7280', fontSize: '0.875rem', textDecoration: 'none' }}>← ${title}</Link>
+        <span style={{ color: '#d1d5db' }}>/</span>
+        <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', margin: 0, flex: 1 }}>{item.name}</h2>
+        <span style={{ padding: '3px 12px', borderRadius: 99, fontSize: '0.78rem', fontWeight: 700, background: item.isActive ? '#dcfce7' : '#f1f5f9', color: item.isActive ? '#166534' : '#64748b' }}>
+          {item.isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: '1.25rem', maxWidth: 640 }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'flex-start' }}>
+          <span style={{ color: '#9ca3af', fontSize: '0.78rem', width: 100, flexShrink: 0, paddingTop: 1 }}>Status</span>
+          <span style={{ fontSize: '0.875rem', color: '#111827' }}>{item.status}</span>
+        </div>
+        {item.description && (
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'flex-start' }}>
+            <span style={{ color: '#9ca3af', fontSize: '0.78rem', width: 100, flexShrink: 0, paddingTop: 1 }}>Description</span>
+            <span style={{ fontSize: '0.875rem', color: '#374151' }}>{item.description}</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          <span style={{ color: '#9ca3af', fontSize: '0.78rem', width: 100, flexShrink: 0, paddingTop: 1 }}>Created</span>
+          <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>{new Date(item.createdAt).toLocaleString()}</span>
+        </div>
+        <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
+          <fetcher.Form method="post">
+            <input type="hidden" name="intent" value="toggle" />
+            <input type="hidden" name="item" value={JSON.stringify(item)} />
+            <button type="submit" style={{ padding: '6px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#f8fafc', color: '#374151', cursor: 'pointer', fontSize: '0.875rem' }}>
+              {item.isActive ? 'Deactivate' : 'Activate'}
+            </button>
+          </fetcher.Form>
+        </div>
+      </div>
+    </div>
+  );
+}
+`;
+}
+
+function domainResourceNewPageTsx(pascal: string, title: string, slug: string): string {
+  return `import { useNavigate } from 'react-router';
+import { useState } from 'react';
+
+const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
+
+const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' };
+const labelStyle: React.CSSProperties = { display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: 4 };
+
+export default function ${pascal}NewPage() {
+  const navigate = useNavigate();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    const fd = new FormData(e.currentTarget);
+    const tenantId = localStorage.getItem('tenantId') ?? '';
+    const token = localStorage.getItem('token') ?? '';
+    try {
+      const res = await fetch(\`\${API}/v1/${slug}\`, {
+        method: 'POST',
+        headers: { 'x-tenant-id': tenantId, authorization: \`Bearer \${token}\`, 'content-type': 'application/json' },
+        body: JSON.stringify({ name: fd.get('name'), description: fd.get('description') || null }),
+      });
+      if (res.ok) {
+        const created = (await res.json()) as { id: string };
+        navigate(\`/${slug}/\${created.id}\`);
+      } else {
+        const err = (await res.json()) as { message?: string };
+        setError(err.message ?? \`Error \${res.status}\`);
+        setSubmitting(false);
+      }
+    } catch {
+      setError('Network error — API unavailable');
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '0.875rem', padding: 0 }}>← Back</button>
+        <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>New ${title}</h2>
+      </div>
+      {error && <p style={{ color: '#ef4444', fontSize: '0.875rem', marginBottom: '0.75rem', background: '#fef2f2', border: '1px solid #fecaca', padding: '8px 12px', borderRadius: 8 }}>⚠️ {error}</p>}
+      <form onSubmit={handleSubmit} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div>
+          <label style={labelStyle}>Name *</label>
+          <input name="name" required placeholder="${title} name" style={inputStyle} />
+        </div>
+        <div>
+          <label style={labelStyle}>Description</label>
+          <textarea name="description" rows={3} placeholder="Optional description..." style={{ ...inputStyle, resize: 'vertical' }} />
+        </div>
+        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+          <button type="button" onClick={() => navigate(-1)} style={{ padding: '0.5rem 1.25rem', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600 }}>Cancel</button>
+          <button type="submit" disabled={submitting} style={{ padding: '0.5rem 1.5rem', background: submitting ? '#93c5fd' : '#2563eb', color: '#fff', border: 'none', borderRadius: 8, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600 }}>{submitting ? 'Creating...' : 'Create ${title}'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+`;
+}
+
 function parseType(value: string): FeatureType {
   if (
     value === 'api'
     || value === 'api-resource'
-      || value === 'admin-resource'
+    || value === 'admin-resource'
+    || value === 'domain-resource'
     || value === 'ui'
     || value === 'public-page'
     || value === 'tenant-module'
@@ -316,7 +718,7 @@ function parseType(value: string): FeatureType {
     return value;
   }
 
-  throw new Error(`Invalid feature type '${value}'. Use api, api-resource, admin-resource, ui, public-page, tenant-module, worker, background-job, auth-flow, billing-module, notifications-module, logging-module, or ai-agent.`);
+  throw new Error(`Invalid feature type '${value}'. Use: api, api-resource, admin-resource, domain-resource, ui, public-page, tenant-module, worker, background-job, auth-flow, billing-module, notifications-module, logging-module, or ai-agent.`);
 }
 
 function adminResourceRouteTs(slug: string, pascal: string): string {
@@ -978,42 +1380,39 @@ export type ${pascal}Module = typeof ${toCamelCase(pascal)}Module;
 }
 
 function tenantModuleSeedScript(slug: string, title: string): string {
-  return `export async function seed({ prisma, tenantIds }) {
-  // Tenant-module seed hook for ${title}. Add module-specific baseline records here.
-  if (!Array.isArray(tenantIds) || tenantIds.length === 0) {
-    return;
-  }
+  return `import { db, settings } from '@hubforge/db';
+import { and, eq } from 'drizzle-orm';
 
-  const existing = await (prisma.setting.findFirst as any)({
-    where: {
-      tenantId: tenantIds[0],
-      environmentId: null,
-      scope: 'tenant',
-      module: '${slug}',
-      key: 'enabled',
-    },
-    select: { id: true },
-  });
+/**
+ * Tenant-module seed hook for ${title}.
+ * Enables the module in settings for each tenant.
+ * @param {{ tenantIds: string[] }} context
+ */
+export async function seed({ tenantIds }) {
+  if (!Array.isArray(tenantIds) || tenantIds.length === 0) return;
 
-  if (existing) {
-    await (prisma.setting.update as any)({
-      where: { id: existing.id },
-      data: { value: 'true', dataType: 'boolean' },
+  for (const tenantId of tenantIds) {
+    const key = 'modules.${slug}.enabled';
+    const existing = await db.query.settings.findFirst({
+      where: and(eq(settings.tenantId, tenantId), eq(settings.key, key)),
+      columns: { id: true },
     });
-    return;
-  }
 
-  await (prisma.setting.create as any)({
-    data: {
-      tenantId: tenantIds[0],
-      environmentId: null,
-      scope: 'tenant',
-      module: '${slug}',
-      key: 'enabled',
-      value: 'true',
-      dataType: 'boolean',
-    },
-  });
+    if (existing) {
+      await db.update(settings)
+        .set({ value: 'true', updatedAt: new Date() })
+        .where(eq(settings.id, existing.id));
+    } else {
+      await db.insert(settings).values({
+        tenantId,
+        scope: 'tenant',
+        module: '${slug}',
+        key,
+        value: 'true',
+        dataType: 'boolean',
+      });
+    }
+  }
 }
 `;
 }

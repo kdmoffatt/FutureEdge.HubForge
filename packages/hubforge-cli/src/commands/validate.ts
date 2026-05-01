@@ -9,8 +9,18 @@ const REQUIRED_PATHS = [
   'apps/api/src/server.ts',
   'apps/portal/app/routes/_app.tsx',
   'apps/ui/app/routes/_index.tsx',
+  'infra/compose/docker-compose.yml',
+];
+
+// Either Drizzle or Prisma schema must exist (projects may use either)
+const SCHEMA_CANDIDATES = [
+  'packages/db/src/schema.ts',
   'packages/db/prisma/schema.prisma',
-  'infra/k8s/namespace.yaml',
+];
+
+const DB_CONFIG_CANDIDATES = [
+  'packages/db/drizzle.config.ts',
+  'packages/db/prisma/schema.prisma',
 ];
 
 export async function runValidateCommand(args: string[]): Promise<void> {
@@ -27,7 +37,23 @@ export async function runValidateCommand(args: string[]): Promise<void> {
     );
   }
 
-  console.log(`[hubforge] Baseline structure check passed (${REQUIRED_PATHS.length} required files).`);
+  const hasSchema = await anyPathExists(targetDir, SCHEMA_CANDIDATES);
+  if (!hasSchema) {
+    throw new Error(
+      'Validation failed. No database schema found. Expected one of:\n' +
+      SCHEMA_CANDIDATES.map((p) => `  - ${p}`).join('\n'),
+    );
+  }
+
+  const hasDbConfig = await anyPathExists(targetDir, DB_CONFIG_CANDIDATES);
+  if (!hasDbConfig) {
+    throw new Error(
+      'Validation failed. No database config found. Expected one of:\n' +
+      DB_CONFIG_CANDIDATES.map((p) => `  - ${p}`).join('\n'),
+    );
+  }
+
+  console.log(`[hubforge] Baseline structure check passed (${REQUIRED_PATHS.length} required files + DB schema).`);
 
   if (quick) {
     console.log('[hubforge] Quick validation complete.');
@@ -55,6 +81,18 @@ async function getMissingPaths(targetDir: string, required: string[]): Promise<s
     }
   }
   return missing;
+}
+
+async function anyPathExists(targetDir: string, candidates: string[]): Promise<boolean> {
+  for (const relativePath of candidates) {
+    try {
+      await access(path.join(targetDir, relativePath));
+      return true;
+    } catch {
+      // continue
+    }
+  }
+  return false;
 }
 
 async function runPnpm(cwd: string, args: string[], label: string): Promise<void> {

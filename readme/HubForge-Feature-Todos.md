@@ -20,8 +20,8 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 
 ## Template packs
 
-- [x] `full` template pack baseline
-- [x] `full-postgres-rls` template pack baseline
+- [x] `full` template pack baseline (Prisma ORM)
+- [x] `full-postgres-rls` template pack baseline (Drizzle ORM, migrated from Prisma 2026-04-30)
 - [x] Postgres RLS migration baseline included
 - [x] Events package baseline included in RLS pack
 - [x] Workflows package baseline included in RLS pack
@@ -40,6 +40,7 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] `feature add notifications-module` (Firebase-default provider baseline)
 - [x] `feature add ai-agent`
 - [x] `feature add background-job` (API trigger route + worker pairing)
+- [x] `feature add domain-resource` (Drizzle table + CRUD Hono route + portal list/detail/new pages; `full-postgres-rls` only)
 
 ## Init profile and auth configuration
 
@@ -96,10 +97,13 @@ This checklist is the shared tracking board for HubForge framework parity and ro
 - [x] 2026-04-27: Added foundation docs bundle for final completion pass (`docs/background-jobs.md`, `docs/i18n.md`, `docs/features/*`)
 - [x] 2026-04-27: Implemented final completion code slice (dynamic portal menu/header, i18n hook, profile + tenant switch APIs, modules settings route wiring) and validated against FieldOps regen
 - [x] 2026-04-27: Improved jobs/RBAC/notifications portal UX in template generator and cleaned regen command naming to generic `hubforge:regen` / `hubforge:regen:sh`
+- [x] 2026-04-30: Migrated `full-postgres-rls` template from Prisma to Drizzle ORM; added `domain-resource` feature generator; updated dual-ORM validate and Drizzle-based tenant module seed script
 
 ## Platform services checklist (latest scan)
 
-- [x] ORM baseline (Prisma schema + migrations + bootstrap)
+- [x] ORM baseline (`full`: Prisma schema + migrations + bootstrap; `full-postgres-rls`: Drizzle ORM + drizzle-kit + RLS SQL scripts)
+- [x] Dual-ORM `validate` command (accepts Drizzle `src/schema.ts` or Prisma `prisma/schema.prisma` via `anyPathExists()`)
+- [x] Drizzle tenant module seed script (`db.query.settings.findFirst`, `db.update`, `db.insert` patterns in generated `seed.mjs`)
 - [x] Unified seeding baseline (core seed + module seed registry + module seed hooks)
 - [x] API routing and middleware baseline
 - [x] Data validation/serialization baseline via zod event schemas and typed route patterns

@@ -35,8 +35,10 @@ This implementation establishes a practical baseline for a cross-platform CLI th
 
 ### Generated Database
 
-- **ORM:** Prisma — chosen for its multi-provider support (sqlite/postgres/mysql/sqlserver) and committed migration files (no implicit drift)
-- **Tenancy:** Shared DB by default; schema-per-tenant with RLS in `full-postgres-rls` template
+- **ORM (`full` template):** Prisma — multi-provider support (sqlite/postgres/mysql/sqlserver), committed migration files
+- **ORM (`full-postgres-rls` template):** Drizzle ORM — type-safe SQL, drizzle-kit migrations, native PostgreSQL RLS integration via `current_tenant_id()` session variable
+- **Tenancy:** Shared DB by default; PostgreSQL Row-Level Security per-tenant in `full-postgres-rls` template
+- **Domain tables:** `fo_` prefix convention; nullable FK relations (`onDelete: 'set null'`) for safe cascade behaviour
 
 ### Generated AI Service (apps/ai)
 
@@ -97,6 +99,10 @@ This is intentionally an in-process worker for simplicity. In production, the wo
 - [x] Real BullMQ webhook retry queue (5 attempts, exponential backoff)
 - [x] Playwright e2e wiring (config + smoke spec + CI workflow)
 - [x] Comprehensive root README for open-source contributors
+- [x] Drizzle ORM migration in `full-postgres-rls` template (replacing Prisma): `schema.ts`, `fieldops.ts`, `drizzle.config.ts`, `drizzle/`, `rls.sql`, `rls-fieldops.sql`
+- [x] `domain-resource` feature generator: Drizzle table + CRUD Hono route + portal list/detail/new pages
+- [x] Dual-ORM `validate` command: accepts either `packages/db/src/schema.ts` (Drizzle) or `packages/db/prisma/schema.prisma` (Prisma) via `anyPathExists()` candidate checking
+- [x] Tenant module seed script updated to Drizzle patterns (`db.query.settings.findFirst`, `db.update`, `db.insert`)
 
 ## Roadmap completion status
 

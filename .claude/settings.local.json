@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm \"C:/Users/kmoffatt/source/repos/FutureEdgePro/fieldops-workhub-local/packages/db/drizzle/0000_thankful_lady_bullseye.sql\")",
+      "Bash(rm \"C:/Users/kmoffatt/source/repos/FutureEdgePro/fieldops-workhub-local/packages/db/drizzle/meta/0000_snapshot.json\")",
+      "Bash(rm \"C:/Users/kmoffatt/source/repos/FutureEdgePro/fieldops-workhub-local/packages/db/drizzle/meta/_journal.json\")",
+      "Bash(pnpm --filter @hubforge/cli typecheck)",
+      "Bash(pnpm --filter @hubforge/api typecheck)",
+      "Bash(pnpm --filter @hubforge/portal typecheck)",
+      "Bash(pnpm --filter @hubforge/db typecheck)",
+      "Bash(pnpm --filter @hubforge/db db:generate)",
+      "Bash(PowerShell -Command \"docker ps --filter 'name=postgres' --format '{{.Names}} {{.Status}}'\")",
+      "PowerShell(Test-NetConnection -ComputerName localhost -Port 5432 -InformationLevel Quiet)",
+      "Bash(DATABASE_URL=postgresql://hubforge:hubforge@localhost:5432/fieldops pnpm db:migrate)"
+    ]
+  }
+}

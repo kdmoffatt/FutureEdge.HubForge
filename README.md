@@ -51,7 +51,7 @@ Running `hubforge init my-app --template full-postgres-rls` produces a complete 
 | `packages/appstack` | Module capability registry (feature flags per module) |
 | `packages/auth-client` | Browser-side OIDC session helpers (Zitadel / Auth0 / Keycloak) |
 | `packages/sdk-server` | Server-side typed SDK wrappers |
-| `packages/db` | Prisma schema, migrations, and database bootstrapping |
+| `packages/db` | ORM schema, migrations, and database bootstrapping (`full`: Prisma; `full-postgres-rls`: Drizzle ORM) |
 | `infra/compose` | Docker Compose for local infrastructure services |
 | `e2e/` | Playwright end-to-end smoke tests |
 | `.github/workflows/` | CI, release, and e2e GitHub Actions pipelines |
@@ -165,12 +165,16 @@ The AI service exposes a `/predict` endpoint for model inference. The generated 
 
 ### Database & ORM
 
+HubForge uses different ORMs depending on the selected template:
+
+#### `full` template — Prisma
+
 | Concern | Choice |
 |---------|--------|
 | **ORM** | [Prisma](https://www.prisma.io) |
 | **Supported providers** | `postgresql`, `sqlite`, `mysql`, `sqlserver` |
 | **Migrations** | Prisma migrate (SQL migration files committed to source) |
-| **Multi-tenancy** | Shared DB (default), schema-per-tenant (`full-postgres-rls` template) |
+| **Multi-tenancy** | Shared DB (default) |
 
 The generated Prisma schema (`packages/db/prisma/schema.prisma`) includes a core multi-tenant data model:
 
@@ -179,7 +183,20 @@ The generated Prisma schema (`packages/db/prisma/schema.prisma`) includes a core
 - `Membership` — user-to-organization role assignment
 - `User` — application user linked to external IdP identity
 
-A **bootstrap script** (`packages/db/scripts/bootstrap-postgres.mjs`) handles Postgres database + user creation for local development without requiring Docker — it uses the `pg` client directly and runs idempotently.
+#### `full-postgres-rls` template — Drizzle ORM
+
+| Concern | Choice |
+|---------|--------|
+| **ORM** | [Drizzle ORM](https://orm.drizzle.team) |
+| **Provider** | `postgresql` |
+| **Migrations** | drizzle-kit (`drizzle-kit generate` → `drizzle-kit migrate`) |
+| **Schema files** | `packages/db/src/schema.ts` (framework tables) + `packages/db/src/fieldops.ts` (domain tables) |
+| **RLS scripts** | `packages/db/drizzle/rls.sql` (framework RLS) + `packages/db/drizzle/rls-fieldops.sql` (domain RLS) |
+| **Multi-tenancy** | PostgreSQL Row-Level Security via `current_tenant_id()` session variable |
+
+Domain tables use the `fo_` prefix and are defined with nullable FK relations (`onDelete: 'set null'`) for safe cascade behaviour.
+
+A **bootstrap script** (`packages/db/scripts/bootstrap-postgres.mjs`) handles Postgres database + role creation for local development without requiring Docker — it uses the `pg` client directly and runs idempotently.
 
 ---
 
@@ -383,9 +400,13 @@ packages/
 │   └── src/index.ts  # createAppStack(), registerModule(), hasCapability()
 ├── auth-client/      # Browser OIDC session helpers
 │   └── src/index.ts  # getSession(), redirectToLogin(), clearSession()
-├── db/               # Prisma schema + migrations + bootstrap scripts
-│   ├── prisma/schema.prisma
-│   ├── migrations/
+├── db/               # ORM schema + migrations + bootstrap scripts
+│   ├── prisma/schema.prisma     # full template (Prisma)
+│   ├── src/schema.ts            # full-postgres-rls template (Drizzle — framework tables)
+│   ├── src/fieldops.ts          # full-postgres-rls template (Drizzle — domain tables)
+│   ├── drizzle.config.ts        # full-postgres-rls template
+│   ├── drizzle/                 # full-postgres-rls migrations + RLS SQL scripts
+│   ├── migrations/              # full template (Prisma migrations)
 │   └── scripts/bootstrap-postgres.mjs
 ├── sdk-server/       # Typed server-side SDK helpers
 │   └── src/index.ts  # createHubForgeContext(), resolveServiceConfig()

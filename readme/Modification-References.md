@@ -2,6 +2,54 @@
 
 This file tracks implementation changes made in this session.
 
+## Latest update (2026-04-30): Drizzle ORM migration + domain-resource feature generator
+
+Migrated `full-postgres-rls` template from Prisma to **Drizzle ORM** and added a new `domain-resource` feature generator.
+
+### `full-postgres-rls` template now generates Drizzle ORM (not Prisma)
+
+Generated files changed:
+
+- `packages/db/src/schema.ts` — Drizzle schema for framework tables (tenants, users, organizations, environments, memberships, settings, permissions, roles, etc.)
+- `packages/db/src/fieldops.ts` — Drizzle schema for 8 domain tables with `fo_` prefix: `fo_customer`, `fo_service_type`, `fo_field_technician`, `fo_work_order`, `fo_work_order_line`, `fo_work_order_note`, `fo_dispatch_assignment`, `fo_invoice`
+- `packages/db/drizzle.config.ts` — drizzle-kit config pointing at `src/schema.ts` + `src/fieldops.ts`
+- `packages/db/drizzle/` — migration directory with `_journal.json` tracking (managed by drizzle-kit)
+- `packages/db/drizzle/rls.sql` — `current_tenant_id()` function + RLS enables/policies for 10 framework tables
+- `packages/db/drizzle/rls-fieldops.sql` — RLS enables/policies for 8 domain tables
+
+Removed from `full-postgres-rls` output: `packages/db/prisma/`, `packages/db/migrations/0002_enable_rls.sql`, `SHADOW_DATABASE_URL`.
+
+FK convention: `customerId`, `workOrderId` on `fo_work_order` and `fo_invoice` are **nullable** with `onDelete: 'set null'`.
+
+DB initialization workflow: `pnpm db:generate` → `pnpm db:bootstrap` → `pnpm db:migrate` → `pnpm db:seed`.
+
+drizzle-kit CJS note: if `fieldops.ts` imports use `.js` extension (required for ESM runtime), temporarily change imports to `.ts` before running `db:generate`, then revert. `_journal.json` must exist in `drizzle/meta/` before first generation.
+
+### New `domain-resource` feature type
+
+`hubforge feature add <name> --type domain-resource` generates:
+
+1. Drizzle table definition appended to `packages/db/src/fieldops.ts`
+2. Full CRUD Hono API route (`list` with ilike search + pagination, `get`, `create`, `update`, `delete`) in `apps/api/src/routes/<name>.ts`
+3. Portal list page at `apps/portal/app/routes/_app.<name>._index.tsx`
+4. Portal detail page at `apps/portal/app/routes/_app.<name>.$id.tsx`
+5. Portal new page at `apps/portal/app/routes/_app.<name>.new.tsx`
+
+Available for `full-postgres-rls` projects only (requires Drizzle + `fieldops.ts`).
+
+### Dual-ORM `validate` command
+
+`validate.ts` now uses `anyPathExists()` to accept either ORM's schema file:
+
+- `SCHEMA_CANDIDATES`: `['packages/db/src/schema.ts', 'packages/db/prisma/schema.prisma']`
+- `DB_CONFIG_CANDIDATES`: `['packages/db/drizzle.config.ts', 'packages/db/prisma/schema.prisma']`
+
+Validation message: `"Baseline structure check passed (N required files + DB schema)"`.
+
+### Tenant module seed script updated to Drizzle
+
+`tenantModuleSeedScript()` in `feature.ts` now generates Drizzle-style seed patterns (`db.query.settings.findFirst`, `db.update`, `db.insert`) instead of Prisma patterns.
+
 ## Latest update (regen command cleanup + UX completion)
 
 Completed requested cleanup and command naming generalization:
