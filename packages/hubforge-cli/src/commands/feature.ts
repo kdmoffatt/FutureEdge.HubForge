@@ -582,43 +582,49 @@ export default function ${pascal}DetailPage() {
 
   if (error || !item) {
     return (
-      <div>
-        <Link to="/${slug}" style={{ color: '#2563eb', fontSize: '0.875rem' }}>← Back to ${title}</Link>
-        <p style={{ color: '#ef4444', marginTop: '1rem' }}>Error: {error ?? 'Not found'}</p>
+      <div className="hf-detail-shell">
+        <Link to="/${slug}" className="hf-back-link">Back to ${title}</Link>
+        <p className="hf-page-error">Error: {error ?? 'Not found'}</p>
       </div>
     );
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <Link to="/${slug}" style={{ color: '#6b7280', fontSize: '0.875rem', textDecoration: 'none' }}>← ${title}</Link>
-        <span style={{ color: '#d1d5db' }}>/</span>
-        <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', margin: 0, flex: 1 }}>{item.name}</h2>
+    <div className="hf-detail-shell">
+      <div className="hf-detail-head">
+        <Link to="/${slug}" className="hf-back-link">Back to ${title}</Link>
+        <h2 className="hf-detail-title">{item.name}</h2>
+        <span className="hf-code-pill">{item.id.slice(0, 8)}</span>
         <span style={{ padding: '3px 12px', borderRadius: 99, fontSize: '0.78rem', fontWeight: 700, background: item.isActive ? '#dcfce7' : '#f1f5f9', color: item.isActive ? '#166534' : '#64748b' }}>
           {item.isActive ? 'Active' : 'Inactive'}
         </span>
       </div>
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: '1.25rem', maxWidth: 640 }}>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'flex-start' }}>
-          <span style={{ color: '#9ca3af', fontSize: '0.78rem', width: 100, flexShrink: 0, paddingTop: 1 }}>Status</span>
-          <span style={{ fontSize: '0.875rem', color: '#111827' }}>{item.status}</span>
+
+      <div className="hf-card" style={{ maxWidth: 720 }}>
+        <h3 className="hf-section-label">Overview</h3>
+        <div className="hf-detail-row">
+          <span className="hf-detail-key">Status</span>
+          <span className="hf-detail-value">{item.status}</span>
         </div>
         {item.description && (
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'flex-start' }}>
-            <span style={{ color: '#9ca3af', fontSize: '0.78rem', width: 100, flexShrink: 0, paddingTop: 1 }}>Description</span>
-            <span style={{ fontSize: '0.875rem', color: '#374151' }}>{item.description}</span>
+          <div className="hf-detail-row">
+            <span className="hf-detail-key">Description</span>
+            <span className="hf-detail-value">{item.description}</span>
           </div>
         )}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-          <span style={{ color: '#9ca3af', fontSize: '0.78rem', width: 100, flexShrink: 0, paddingTop: 1 }}>Created</span>
-          <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>{new Date(item.createdAt).toLocaleString()}</span>
+        <div className="hf-detail-row">
+          <span className="hf-detail-key">Created</span>
+          <span className="hf-detail-value">{new Date(item.createdAt).toLocaleString()}</span>
         </div>
-        <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
+        <div className="hf-detail-row">
+          <span className="hf-detail-key">Updated</span>
+          <span className="hf-detail-value">{new Date(item.updatedAt).toLocaleString()}</span>
+        </div>
+        <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem', marginTop: '0.35rem' }}>
           <fetcher.Form method="post">
             <input type="hidden" name="intent" value="toggle" />
             <input type="hidden" name="item" value={JSON.stringify(item)} />
-            <button type="submit" style={{ padding: '6px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#f8fafc', color: '#374151', cursor: 'pointer', fontSize: '0.875rem' }}>
+            <button type="submit" className="hf-secondary-btn">
               {item.isActive ? 'Deactivate' : 'Activate'}
             </button>
           </fetcher.Form>
@@ -635,9 +641,6 @@ function domainResourceNewPageTsx(pascal: string, title: string, slug: string): 
 import { useState } from 'react';
 
 const API = (import.meta as { env?: Record<string, string> }).env?.['VITE_API_URL'] ?? 'http://localhost:4000';
-
-const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' };
-const labelStyle: React.CSSProperties = { display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: 4 };
 
 export default function ${pascal}NewPage() {
   const navigate = useNavigate();
@@ -666,30 +669,30 @@ export default function ${pascal}NewPage() {
         setSubmitting(false);
       }
     } catch {
-      setError('Network error — API unavailable');
+      setError('Network error - API unavailable');
       setSubmitting(false);
     }
   }
 
   return (
-    <div style={{ maxWidth: 560 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '0.875rem', padding: 0 }}>← Back</button>
-        <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>New ${title}</h2>
+    <div className="hf-form-shell">
+      <div className="hf-detail-head">
+        <button type="button" onClick={() => navigate(-1)} className="hf-back-link" style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}>Back</button>
+        <h2 className="hf-detail-title">Create ${title}</h2>
       </div>
-      {error && <p style={{ color: '#ef4444', fontSize: '0.875rem', marginBottom: '0.75rem', background: '#fef2f2', border: '1px solid #fecaca', padding: '8px 12px', borderRadius: 8 }}>⚠️ {error}</p>}
-      <form onSubmit={handleSubmit} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div>
-          <label style={labelStyle}>Name *</label>
-          <input name="name" required placeholder="${title} name" style={inputStyle} />
+      {error && <p className="hf-page-error">Warning: {error}</p>}
+      <form onSubmit={handleSubmit} className="hf-card" style={{ display: 'grid', gap: '0.9rem' }}>
+        <div className="hf-form-field">
+          <label className="hf-form-label">Name *</label>
+          <input className="hf-form-input" name="name" required placeholder="${title} name" />
         </div>
-        <div>
-          <label style={labelStyle}>Description</label>
-          <textarea name="description" rows={3} placeholder="Optional description..." style={{ ...inputStyle, resize: 'vertical' }} />
+        <div className="hf-form-field">
+          <label className="hf-form-label">Description</label>
+          <textarea className="hf-form-textarea" name="description" rows={3} placeholder="Optional description..." />
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={() => navigate(-1)} style={{ padding: '0.5rem 1.25rem', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600 }}>Cancel</button>
-          <button type="submit" disabled={submitting} style={{ padding: '0.5rem 1.5rem', background: submitting ? '#93c5fd' : '#2563eb', color: '#fff', border: 'none', borderRadius: 8, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600 }}>{submitting ? 'Creating...' : 'Create ${title}'}</button>
+        <div className="hf-form-actions">
+          <button type="button" onClick={() => navigate(-1)} className="hf-secondary-btn">Cancel</button>
+          <button type="submit" disabled={submitting} className="hf-primary-btn">{submitting ? 'Creating...' : 'Create ${title}'}</button>
         </div>
       </form>
     </div>
